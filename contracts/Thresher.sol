@@ -7,7 +7,9 @@ contract Tornado {
 }
 
 /**
-   Double-ended queue
+   Double-ended queue of entries.
+   Functions not used by Thresher have been removed
+   (resurrect them from git history if necessary)
  **/
 contract EntryDeque {
     struct Entry {
@@ -21,15 +23,6 @@ contract EntryDeque {
 
     function empty() internal view returns (bool) {
         return nLast < nFirst;
-    }
-
-    function length() internal view returns (uint256) {
-        return nFirst-nLast+1;
-    }
-
-    function pushFirst(uint256 _amount, bytes32 _commitment, uint256 _blockNumber) internal {
-        nFirst -= 1;
-        entries[nFirst] = Entry(_amount, _commitment, _blockNumber);
     }
 
     function first() internal view returns (uint256 _amount, bytes32 _commitment, uint256 _blockNumber) {
@@ -50,21 +43,6 @@ contract EntryDeque {
     function pushLast(uint256 _amount, bytes32 _commitment, uint256 _blockNumber) internal {
         nLast += 1;
         entries[nLast] = Entry(_amount, _commitment, _blockNumber);
-    }
-
-    function last() internal view returns (uint256 _amount, bytes32 _commitment, uint256 _blockNumber) {
-        require(!empty());
-
-        _amount = entries[nLast].amount;
-        _commitment = entries[nLast].commitment;
-        _blockNumber = entries[nLast].blockNumber;
-    }
-
-    function popLast() internal returns (uint256 _amount, bytes32 _commitment, uint256 _blockNumber) {
-        (_amount, _commitment, _blockNumber) = last();
-
-        delete entries[nLast];
-        nLast -= 1;
     }
 }
 
