@@ -1,3 +1,31 @@
+/*
+* Thresher accumulates small deposits until there are enough to fund a full Tornado.cash
+* deposit.
+*
+* The problem: Tornado.cash deposits and withdrawals are fixed-size, with a minimum
+* size (0.1 ETH in the case of ether). Anybody that uses tornado properly will accumulate
+* less-than-minimum amounts of ETH in different addresses and be unable to spend
+* them without compromising privacy.
+*
+* Solution: Accumulated 0.1 ETH or more, then redeposits 0.1 ETH into Tornado.cash with
+* one of the deposit's notes, picked fairly at random (e.g. if you deposit 0.09 ETH
+* your note has a 90% chance of being picked).
+*
+* Winners are picked as a side effect of processing a new deposit at some current block height N.
+*
+* The hash of block N-1 is used as the random seed to pick a winner. However, to make cheating by
+* miners even more costly, only deposits received before block N-1 can win.
+*
+* I haven't run the numbers, but it is almost certainly not in the miners' financial interest
+* to cheat; proof-of-work makes it expensive to recompute a block hash, much more expensive than
+* the 0.1 ETH a miner might gain by cheating.
+*
+* Furthermore, even if miner of block N-1 tries to generate a winning block hash, they would need
+* to have a confirmed deposit in block N-2 (or earlier) to be eligible to win. When they submitted
+* that transaction they'd have to pay transaction fees, which they will lose if they don't end up
+* mining block N-1.
+*/
+
 pragma solidity ^0.5.8;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -7,20 +35,20 @@ contract Tornado {
     function deposit(bytes32 _commitment) external payable;
 }
 
-/**
-   Double-ended queue of entries.
-   Functions not used by Thresher have been removed
-   (resurrect them from git history if necessary)
- **/
+/*
+* Double-ended queue of entries.
+* Functions not used by Thresher (like popRight()) have been removed
+* (resurrect them from git history if necessary)
+*/
 contract EntryDeque {
     struct Entry {
         uint256 amount;
         bytes32 commitment; // aka tornado.cash 'note' / pedersen commitment
         uint256 blockNumber;
     }
-    mapping(uint256 => Entry) entries;
-    uint256 nFirst = 2**255;
-    uint256 nLast = nFirst - 1;
+    mapping(uint256 => Entry) internal entries;
+    uint256 internal nFirst = 2**255;
+    uint256 internal nLast = nFirst - 1;
 
     function empty() internal view returns (bool) {
         return nLast < nFirst;
@@ -54,11 +82,22 @@ contract Thresher is EntryDeque, ReentrancyGuard {
     event Win(bytes32 indexed commitment);
     event Lose(bytes32 indexed commitment);
 
+    /**
+      @dev The constructor
+      @param _tornadoAddress the Tornado.cash contract that will receive accumulated deposits
+    **/
     constructor(address payable _tornadoAddress) public {
         tornadoAddress = _tornadoAddress;
         randomHash = keccak256(abi.encode("Eleven!"));
+
+        // Sanity check:
+        require(Tornado(tornadoAddress).denonimation() > 0);
     }
 
+    /**
+      @dev Deposit funds. The caller must send less than or equal to the Tornado.cash denonimation
+      @param _commitment Forwarded to Tornado if this deposit 'wins'
+    **/
     function deposit(bytes32 _commitment) external payable nonReentrant {
         Tornado tornado = Tornado(tornadoAddress);
         uint256 payoutThreshold = tornado.denonimation();
@@ -95,8 +134,8 @@ contract Thresher is EntryDeque, ReentrancyGuard {
             }
             popFirst();
 
-            // a different hash is computed for every entry to make it more difficult for a miner
-            // to arrange for their own entries to win.
+            // a different hash is computed for every entry to make it more difficult for somebody
+            // to arrange for their own entries to win
             bytes32 b = hash ^ blockhash(currentBlock-1);
             hash = keccak256(abi.encodePacked(b));
             if (amount >= pickWinningThreshold(randomHash, payoutThreshold)) {
