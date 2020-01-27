@@ -33,8 +33,8 @@ contract EntryDeque {
         _blockNumber = entries[nFirst].blockNumber;
     }
 
-    function popFirst() internal returns (uint256 _amount, bytes32 _commitment, uint256 _blockNumber) {
-        (_amount, _commitment, _blockNumber) = first();
+    function popFirst() internal {
+        require(!empty());
 
         delete entries[nFirst];
         nFirst += 1;
