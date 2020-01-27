@@ -3,6 +3,7 @@ pragma solidity ^0.5.8;
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract Tornado {
+    uint256 public denonimation;
     function deposit(bytes32 _commitment) external payable;
 }
 
@@ -47,22 +48,21 @@ contract EntryDeque {
 }
 
 contract Thresher is EntryDeque, ReentrancyGuard {
-    address tornadoAddress;
-    uint256 payoutThreshold;
-    bytes32 randomHash;
+    address public tornadoAddress;
+    bytes32 public randomHash;
 
     event Win(bytes32 indexed commitment);
     event Lose(bytes32 indexed commitment);
 
-    constructor(address payable _tornadoAddress, uint256 _payoutThreshold) public {
-        require(_payoutThreshold > 0);
-
+    constructor(address payable _tornadoAddress) public {
         tornadoAddress = _tornadoAddress;
-        payoutThreshold = _payoutThreshold;
         randomHash = keccak256(abi.encode("Eleven!"));
     }
 
     function deposit(bytes32 _commitment) external payable nonReentrant {
+        Tornado t = Tornado(tornadoAddress);
+        uint256 payoutThreshold = t.denonimation();
+
         uint256 v = msg.value;
         require(v <= payoutThreshold, "Deposit amount too large");
 
@@ -108,7 +108,6 @@ contract Thresher is EntryDeque, ReentrancyGuard {
         }
         randomHash = hash;
         if (winner) {
-           Tornado t = Tornado(tornadoAddress);
            t.deposit.value(payoutThreshold)(commitment);
            emit Win(commitment);
         }

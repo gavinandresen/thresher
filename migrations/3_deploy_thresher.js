@@ -7,7 +7,6 @@ module.exports = function(deployer) {
         const thresher = await deployer.deploy(
             Thresher,
             tornadoMock.address,
-            '100000000000000000',
         )
     })
 };
