@@ -83,6 +83,7 @@ contract Thresher is EntryDeque, ReentrancyGuard {
         uint256 amount;
         bytes32 commitment;
         uint256 blockNumber;
+        bytes32 hash = randomHash;
         
         // Maximum one payout per deposit, because multiple tornado deposits could cost a lot of gas
         // ... but usability is better (faster win/didn't win decisions) if we keep going until
@@ -96,8 +97,8 @@ contract Thresher is EntryDeque, ReentrancyGuard {
 
             // a different hash is computed for every entry to make it more difficult for a miner
             // to arrange for their own entries to win.
-            bytes32 b = randomHash ^ blockhash(currentBlock-1);
-            randomHash = keccak256(abi.encodePacked(b));
+            bytes32 b = hash ^ blockhash(currentBlock-1);
+            hash = keccak256(abi.encodePacked(b));
             if (amount >= pickWinningThreshold(randomHash, payoutThreshold)) {
                 winner = true;
             }
@@ -105,6 +106,7 @@ contract Thresher is EntryDeque, ReentrancyGuard {
                 emit Lose(commitment);
             }
         }
+        randomHash = hash;
         if (winner) {
            Tornado t = Tornado(tornadoAddress);
            t.deposit.value(payoutThreshold)(commitment);
