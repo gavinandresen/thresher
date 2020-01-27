@@ -60,8 +60,8 @@ contract Thresher is EntryDeque, ReentrancyGuard {
     }
 
     function deposit(bytes32 _commitment) external payable nonReentrant {
-        Tornado t = Tornado(tornadoAddress);
-        uint256 payoutThreshold = t.denonimation();
+        Tornado tornado = Tornado(tornadoAddress);
+        uint256 payoutThreshold = tornado.denonimation();
 
         uint256 v = msg.value;
         require(v <= payoutThreshold, "Deposit amount too large");
@@ -108,7 +108,7 @@ contract Thresher is EntryDeque, ReentrancyGuard {
         }
         randomHash = hash;
         if (winner) {
-           t.deposit.value(payoutThreshold)(commitment);
+           tornado.deposit.value(payoutThreshold)(commitment);
            emit Win(commitment);
         }
     }
