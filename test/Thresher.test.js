@@ -9,7 +9,6 @@ const Thresher = artifacts.require('./Thresher.sol')
 
 contract('Thresher', accounts => {
     let thresher
-    let sender = accounts[1]
     let snapshotId
 
     before(async () => {
@@ -20,23 +19,23 @@ contract('Thresher', accounts => {
     describe('#deposit', () => {
         it('should throw if deposit too large', async () => {
             let value = web3.utils.toWei('0.11', 'ether')
-            const error = await thresher.deposit("0x01", { value, from: sender}).should.be.rejected
+            const error = await thresher.send(value).should.be.rejected
             error.reason.should.be.equal('Deposit amount too large')
         })
         it('should handle 0-value deposits', async () => {
             let value = web3.utils.toWei('0.0', 'ether')
-            let r = await thresher.deposit("0x00", { value, from: sender}).should.be.fulfilled
+            let r = await thresher.send(value).should.be.fulfilled
         })
         it('should handle max-value deposits', async () => {
             let value = web3.utils.toWei('0.1', 'ether')
-            let r = await thresher.deposit("0x10", { value, from: sender}).should.be.fulfilled
+            let r = await thresher.send(value).should.be.fulfilled
         })
         it('should win/lose at random', async () => {
             let winCount = 0
             let loseCount = 0
             let value = web3.utils.toWei('0.05', 'ether')
             for (var i = 0; i < 34; i++) {
-                let r = await thresher.deposit("0x05", { value, from: sender}).should.be.fulfilled
+                let r = await thresher.send(value).should.be.fulfilled
                 for (var n = 0; n < r.logs.length; n++) {
                     if (r.logs[n].event == 'Win') {
                         winCount += 1

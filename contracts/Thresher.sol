@@ -7,9 +7,9 @@
 * less-than-minimum amounts of ETH in different addresses and be unable to spend
 * them without compromising privacy.
 *
-* Solution: Accumulated 0.1 ETH or more, then redeposits 0.1 ETH into Tornado.cash with
-* one of the deposit's notes, picked fairly at random (e.g. if you deposit 0.09 ETH
-* your note has a 90% chance of being picked).
+* Solution: Accumulated 0.1 ETH or more, then sends 0.1 ETH back to one of the depositors,
+* picked fairly at random (e.g. if you deposit 0.09 ETH  you have a 90% chance of ending up
+* with 0.1 ETH).
 *
 * Winners are picked as a side effect of processing a new deposit at some current block height N.
 *
@@ -29,11 +29,6 @@ pragma solidity ^0.5.8;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract Tornado {
-    uint256 public denonimation;
-    function deposit(bytes32 _commitment) external payable;
-}
-
 /*
 * Double-ended queue of entries.
 * Functions not used by Thresher (like popRight()) have been removed
@@ -42,7 +37,7 @@ contract Tornado {
 contract EntryDeque {
     struct Entry {
         uint256 amount;
-        bytes32 commitment; // aka tornado.cash 'note' / pedersen commitment
+        address payable depositor;
         uint256 blockNumber;
     }
     mapping(uint256 => Entry) internal entries;
@@ -53,11 +48,11 @@ contract EntryDeque {
         return nLast < nFirst;
     }
 
-    function first() internal view returns (uint256 _amount, bytes32 _commitment, uint256 _blockNumber) {
+    function first() internal view returns (uint256 _amount, address payable _depositor, uint256 _blockNumber) {
         require(!empty());
 
         _amount = entries[nFirst].amount;
-        _commitment = entries[nFirst].commitment;
+        _depositor = entries[nFirst].depositor;
         _blockNumber = entries[nFirst].blockNumber;
     }
 
@@ -68,51 +63,45 @@ contract EntryDeque {
         nFirst += 1;
     }
 
-    function pushLast(uint256 _amount, bytes32 _commitment, uint256 _blockNumber) internal {
+    function pushLast(uint256 _amount, address payable _depositor, uint256 _blockNumber) internal {
         nLast += 1;
-        entries[nLast] = Entry(_amount, _commitment, _blockNumber);
+        entries[nLast] = Entry(_amount, _depositor, _blockNumber);
     }
 }
 
 contract Thresher is EntryDeque, ReentrancyGuard {
-    address public tornadoAddress;
     bytes32 public randomHash;
+    uint256 public payoutThreshold;
 
-    event Win(bytes32 indexed commitment);
-    event Lose(bytes32 indexed commitment);
+    event Win(address indexed depositor);
+    event Lose(address indexed depositor);
 
     /**
       @dev The constructor
-      @param _tornadoAddress the Tornado.cash contract that will receive accumulated deposits
+      @param _payoutThreshold Amount to accumulate / pay out (e.g. 0.1 ether)
     **/
-    constructor(address payable _tornadoAddress) public {
-        tornadoAddress = _tornadoAddress;
-        randomHash = keccak256(abi.encode("Eleven!"));
-
+    constructor(uint256 _payoutThreshold) public {
         // Sanity check:
-        require(Tornado(tornadoAddress).denonimation() > 0);
-        require(Tornado(tornadoAddress).denonimation() < 4 ether);
+        payoutThreshold = _payoutThreshold;
+        require(payoutThreshold > 0);
+        require(payoutThreshold < 4 ether);
+
+        randomHash = keccak256(abi.encode("Eleven!"));
     }
 
     /**
-      @dev Deposit funds. The caller must send less than or equal to the Tornado.cash denonimation
-      @param _commitment Forwarded to Tornado if this deposit 'wins'
+      @dev Deposit funds. The caller must send less than or equal to payoutThreshold
     **/
-    function deposit(bytes32 _commitment) external payable nonReentrant {
-        Tornado tornado = Tornado(tornadoAddress);
-        uint256 payoutThreshold = tornado.denonimation();
-
+    function () external payable nonReentrant {
         uint256 v = msg.value;
         require(v <= payoutThreshold, "Deposit amount too large");
 
         // Q: Any reason to fail if the msg.value is tiny (e.g. 1 wei)?
         // I can't see any reason to enforce a minimum; gas costs make attacks
         // expensive.
-        // Q: any reason to check gasleft(), or just let the deposit fail if
-        // the user doesn't include enough gas for the tornado deposit?
 
         uint256 currentBlock = block.number;
-        pushLast(v, _commitment, currentBlock);
+        pushLast(v, msg.sender, currentBlock);
 
         if (address(this).balance < payoutThreshold) {
             return;
@@ -120,15 +109,15 @@ contract Thresher is EntryDeque, ReentrancyGuard {
 
         bool winner = false;
         uint256 amount;
-        bytes32 commitment;
+        address payable depositor;
         uint256 blockNumber;
         bytes32 hash = randomHash;
         
-        // Maximum one payout per deposit, because multiple tornado deposits could cost a lot of gas
+        // Maximum one payout per deposit, because multiple transfers could cost a lot of gas
         // ... but usability is better (faster win/didn't win decisions) if we keep going until
         // we either pay out or don't have any entries old enough to pay out:
         while (!winner) {
-            (amount, commitment, blockNumber) = first();
+            (amount, depositor, blockNumber) = first();
             if (blockNumber > currentBlock-2) {
                 break;
             }
@@ -142,13 +131,13 @@ contract Thresher is EntryDeque, ReentrancyGuard {
                 winner = true;
             }
             else {
-                emit Lose(commitment);
+                emit Lose(depositor);
             }
         }
         randomHash = hash;
         if (winner) {
-           tornado.deposit.value(payoutThreshold)(commitment);
-           emit Win(commitment);
+           depositor.transfer(payoutThreshold);
+           emit Win(depositor);
         }
     }
 
