@@ -14,16 +14,15 @@
 * Winners are picked as a side effect of processing a new deposit at some current block height N.
 *
 * The hash of block N-1 is used as the random seed to pick a winner. However, to make cheating by
-* miners even more costly, only deposits received before block N-1 can win.
+* miners even more costly (they must pay transaction fees to another miner to get their entries
+* on the list), only deposits received before block N-1 can win.
 *
-* I haven't run the numbers, but it is almost certainly not in the miners' financial interest
-* to cheat; proof-of-work makes it expensive to recompute a block hash, much more expensive than
-* the 0.1 ETH a miner might gain by cheating.
-*
-* Furthermore, even if miner of block N-1 tries to generate a winning block hash, they would need
-* to have a confirmed deposit in block N-2 (or earlier) to be eligible to win. When they submitted
-* that transaction they'd have to pay transaction fees, which they will lose if they don't end up
-* mining block N-1.
+* See "On Bitcoin as a public randomess source" by Bonneau, Clark, and Goldfeder for an
+* analysis of miners trying to cheat by throwing away winning block hashes:
+*    https://pdfs.semanticscholar.org/ebae/9c7d91ea8b6a987642040a2142cc5ea67f7d.pdf
+* Cheating only pays if miners can win more than twice what they earn mining a block;
+* the reward is currently 2 ETH (plus fees), so we're OK using the block hash as our
+* randomness source as long a cheating miner can't win more than 4 ETH.
 */
 
 pragma solidity ^0.5.8;
@@ -92,6 +91,7 @@ contract Thresher is EntryDeque, ReentrancyGuard {
 
         // Sanity check:
         require(Tornado(tornadoAddress).denonimation() > 0);
+        require(Tornado(tornadoAddress).denonimation() < 4 ether);
     }
 
     /**
