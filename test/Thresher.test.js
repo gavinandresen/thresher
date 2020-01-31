@@ -9,33 +9,41 @@ const Thresher = artifacts.require('./Thresher.sol')
 
 contract('Thresher', accounts => {
     let thresher
+    let sender = accounts[1]
     let snapshotId
+    let tornadoDepositETH  // Cost of tornado deposit in ETH
+    let payoutThreshold
+    let oneGWEI = web3.utils.toBN(web3.utils.toWei('1', 'gwei'))
 
     before(async () => {
         thresher = await Thresher.deployed()
+        let tornadoDepositGas = await thresher.tornadoDepositGas()
+        tornadoDepositETH = tornadoDepositGas.mul(oneGWEI)
+        payoutThreshold = web3.utils.toBN(await thresher.payoutThreshold())
+
         snapshotId = await takeSnapshot() 
     })
 
     describe('#deposit', () => {
-        it('should throw if deposit too large', async () => {
-            let value = web3.utils.toWei('0.11', 'ether')
-            const error = await thresher.send(value).should.be.rejected
-            error.reason.should.be.equal('Deposit amount too large')
-        })
         it('should handle 0-value deposits', async () => {
             let value = web3.utils.toWei('0.0', 'ether')
-            let r = await thresher.send(value).should.be.fulfilled
+            let r = await thresher.deposit({value, from: sender, gasPrice: oneGWEI}).should.be.fulfilled
         })
         it('should handle max-value deposits', async () => {
-            let value = web3.utils.toWei('0.1', 'ether')
-            let r = await thresher.send(value).should.be.fulfilled
+            let value = payoutThreshold.add(tornadoDepositETH)
+            let r = await thresher.deposit({value, from: sender, gasPrice: oneGWEI}).should.be.fulfilled
+        })
+        it('should throw if deposit too large', async () => {
+            let value = payoutThreshold.add(tornadoDepositETH).add(web3.utils.toBN(1))
+            const error = await thresher.deposit({value, from: sender, gasPrice: oneGWEI}).should.be.rejected
+            error.reason.should.be.equal('Deposit amount too large')
         })
         it('should win/lose at random', async () => {
             let winCount = 0
             let loseCount = 0
-            let value = web3.utils.toWei('0.05', 'ether')
+            let value = payoutThreshold.add(tornadoDepositETH).div(web3.utils.toBN(2))
             for (var i = 0; i < 34; i++) {
-                let r = await thresher.send(value).should.be.fulfilled
+                let r = await thresher.deposit({value, from: sender, gasPrice: oneGWEI}).should.be.fulfilled
                 for (var n = 0; n < r.logs.length; n++) {
                     if (r.logs[n].event == 'Win') {
                         winCount += 1

@@ -9,7 +9,7 @@
 *
 * Solution: Accumulated 0.1 ETH or more, then sends 0.1 ETH back to one of the depositors,
 * picked fairly at random (e.g. if you deposit 0.09 ETH  you have a 90% chance of ending up
-* with 0.1 ETH).
+* with 0.1 ETH)...  PLUS enough ETH to cover a Tornado.cash deposit.
 *
 * Winners are picked as a side effect of processing a new deposit at some current block height N.
 *
@@ -39,6 +39,7 @@ contract EntryDeque {
         uint256 amount;
         address payable depositor;
         uint256 blockNumber;
+        uint256 gasprice;
     }
     mapping(uint256 => Entry) internal entries;
     uint256 internal nFirst = 2**255;
@@ -48,12 +49,13 @@ contract EntryDeque {
         return nLast < nFirst;
     }
 
-    function first() internal view returns (uint256 _amount, address payable _depositor, uint256 _blockNumber) {
+    function first() internal view returns (uint256 _amount, address payable _depositor, uint256 _blockNumber, uint256 _gasprice) {
         require(!empty());
 
         _amount = entries[nFirst].amount;
         _depositor = entries[nFirst].depositor;
         _blockNumber = entries[nFirst].blockNumber;
+        _gasprice = entries[nFirst].gasprice;
     }
 
     function popFirst() internal {
@@ -63,15 +65,16 @@ contract EntryDeque {
         nFirst += 1;
     }
 
-    function pushLast(uint256 _amount, address payable _depositor, uint256 _blockNumber) internal {
+    function pushLast(uint256 _amount, address payable _depositor, uint256 _blockNumber, uint256 _gasprice) internal {
         nLast += 1;
-        entries[nLast] = Entry(_amount, _depositor, _blockNumber);
+        entries[nLast] = Entry(_amount, _depositor, _blockNumber, _gasprice);
     }
 }
 
 contract Thresher is EntryDeque, ReentrancyGuard {
     bytes32 public randomHash;
     uint256 public payoutThreshold;
+    uint256 public tornadoDepositGas; // Amount of gas for a Tornado deposit
 
     event Win(address indexed depositor);
     event Lose(address indexed depositor);
@@ -79,55 +82,85 @@ contract Thresher is EntryDeque, ReentrancyGuard {
     /**
       @dev The constructor
       @param _payoutThreshold Amount to accumulate / pay out (e.g. 0.1 ether)
+      @param _tornadoDepositGas How much gas a Tornado deposit costs (1 million)
     **/
-    constructor(uint256 _payoutThreshold) public {
+    constructor(uint256 _payoutThreshold, uint256 _tornadoDepositGas) public {
         // Sanity check:
         payoutThreshold = _payoutThreshold;
         require(payoutThreshold > 0);
         require(payoutThreshold < 4 ether);
 
+        tornadoDepositGas = _tornadoDepositGas;
+
         randomHash = keccak256(abi.encode("Eleven!"));
     }
 
     /**
-      @dev Deposit funds. The caller must send less than or equal to payoutThreshold
+      @dev Fallback function, just calls deposit.
     **/
-    function () external payable nonReentrant {
+    function () external payable {
+        this.deposit();
+    }
+
+    /**
+      @dev Deposit funds; rejects too-large deposits.
+    **/
+    function deposit() external payable nonReentrant {
         uint256 v = msg.value;
-        require(v <= payoutThreshold, "Deposit amount too large");
+
+        // If the user wins, they'll get the payout threshold plus enough
+        // ether to pay for a tornado deposit. We use whatever gasprice that
+        // their wallet used for this deposit to figure out how much
+        // the withdrawal will be.
+        uint256 withdrawAmount = payoutThreshold + tornadoDepositGas*tx.gasprice;
+
+        // Don't allow ridiculous withdraw amounts that would otherwise be possible
+        // be sending with a ridiculously large gasprice
+        require(withdrawAmount <= 2*payoutThreshold);
+
+        // And don't allow depositing more than threshold+gas-- prevents
+        // users from losing coins by sending 1 ETH and 'winning' just 0.1
+        require(v <= withdrawAmount, "Deposit amount too large");
 
         // Q: Any reason to fail if the msg.value is tiny (e.g. 1 wei)?
         // I can't see any reason to enforce a minimum; gas costs make attacks
         // expensive.
 
         uint256 currentBlock = block.number;
-        pushLast(v, msg.sender, currentBlock);
-
-        if (address(this).balance < payoutThreshold) {
-            return;
-        }
+        pushLast(v, msg.sender, currentBlock, tx.gasprice);
 
         bool winner = false;
         uint256 amount;
         address payable depositor;
         uint256 blockNumber;
+        uint256 gasprice;
         bytes32 hash = randomHash;
         
         // Maximum one payout per deposit, because multiple transfers could cost a lot of gas
         // ... but usability is better (faster win/didn't win decisions) if we keep going until
         // we either pay out or don't have any entries old enough to pay out:
-        while (!winner) {
-            (amount, depositor, blockNumber) = first();
+        while (!winner && !empty()) {
+            (amount, depositor, blockNumber, gasprice) = first();
             if (blockNumber > currentBlock-2) {
                 break;
             }
+            // amount is how much they put in, withdrawAmount is how much they will win if they win:
+            withdrawAmount = payoutThreshold + tornadoDepositGas*gasprice;
+            if (address(this).balance < withdrawAmount) {
+                break;
+            }
+
             popFirst();
 
             // a different hash is computed for every entry to make it more difficult for somebody
             // to arrange for their own entries to win
             bytes32 b = hash ^ blockhash(currentBlock-1);
             hash = keccak256(abi.encodePacked(b));
-            if (amount >= pickWinningThreshold(randomHash, payoutThreshold)) {
+
+            if (amount >= pickWinningThreshold(randomHash, withdrawAmount)) {
+                (bool success, ) = depositor.call.value(withdrawAmount)("");
+                require(success, "Transfer to winner failed");
+                emit Win(depositor);
                 winner = true;
             }
             else {
@@ -135,12 +168,9 @@ contract Thresher is EntryDeque, ReentrancyGuard {
             }
         }
         randomHash = hash;
-        if (winner) {
-           depositor.transfer(payoutThreshold);
-           emit Win(depositor);
-        }
     }
 
+    // Return a number between 0 and max, given a random hash:
     function pickWinningThreshold(bytes32 hash, uint256 max) internal pure returns (uint256) {
         return uint256(hash) % max;
 
