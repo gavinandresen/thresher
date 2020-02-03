@@ -42,7 +42,9 @@ contract EntryDeque {
         return nLast < nFirst;
     }
 
-    function first() internal view returns (uint256 _amount, uint256 _winAmount, address payable _depositor, uint256 _blockNumber) {
+    function first() internal view returns (
+            uint256 _amount, uint256 _winAmount, address payable _depositor,
+            uint256 _blockNumber) {
         require(!empty());
 
         _amount = entries[nFirst].amount;
@@ -58,7 +60,9 @@ contract EntryDeque {
         nFirst += 1;
     }
 
-    function pushLast(uint256 _amount, uint256 _winAmount, address payable _depositor, uint256 _blockNumber) internal {
+    function pushLast(
+            uint256 _amount, uint256 _winAmount,
+            address payable _depositor, uint256 _blockNumber) internal {
         nLast += 1;
         entries[nLast] = Entry(_amount, _winAmount, _depositor, _blockNumber);
     }
@@ -132,8 +136,7 @@ contract Thresher is EntryDeque, ReentrancyGuard {
             if ((blockNumber+256) > currentBlock) {
                 bytes32 b = hash ^ blockhash(blockNumber+1);
                 hash = keccak256(abi.encodePacked(b));
-            }
-            else {
+            } else {
                 // There is a very mild attack possible here if there are no deposits (or the
                 // contract has a balance < winAmount) for 256 blocks (see ATTACKS.md for
                 // details and mitigation strategies).
@@ -142,20 +145,23 @@ contract Thresher is EntryDeque, ReentrancyGuard {
 
             if (amount >= pickWinningThreshold(hash, winAmount)) {
                 winner = true;
+
+                // transfer used to be the recommended way of transferring ether,
+                // but .call.value()() is now Best Practice
+                // (see https://diligence.consensys.net/blog/2019/09/stop-using-soliditys-transfer-now/)
+                // solhint-disable-next-line avoid-call-value
                 (bool success, ) = depositor.call.value(winAmount)("");
 
                 if (success) {
                     emit Win(depositor);
-                }
-                // We can't require(success), because it opens up a
-                // denial-of-service attack (depositor could ask us to pay
-                // to a contract that always failed). The best we can do
-                // is log the failed payment attempt and move on.
-                else {
+                } else {
+                    // We can't require(success), because it opens up a
+                    // denial-of-service attack (depositor could ask us to pay
+                    // to a contract that always failed). The best we can do
+                    // is log the failed payment attempt and move on.
                     emit TransferError(depositor);
                 }
-            }
-            else {
+            } else {
                 emit Lose(depositor);
             }
         }
