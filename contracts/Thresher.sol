@@ -7,22 +7,15 @@
 * less-than-minimum amounts of ETH in different addresses and be unable to spend
 * them without compromising privacy.
 *
-* Solution: Accumulated 0.1 ETH or more, then sends 0.1 ETH back to one of the depositors,
-* picked fairly at random (e.g. if you deposit 0.09 ETH  you have a 90% chance of ending up
-* with 0.1 ETH)...  PLUS enough ETH to cover a Tornado.cash deposit.
+* Solution: A little rolling lottery. Deposit your leftover ETH, and you'll either
+* lose it or receive enough ETH to pay for a Tornado deposit (0.1 ETH plus gas costs).
+* Your chances of winning are (amount you put in) / (amount if you win) -- if you
+* use the contract repeatedly, you should get as much out as you put in.
 *
-* Winners are picked as a side effect of processing a new deposit at some current block height N.
+* Winners are determined as a side effect of processing a new deposit at some current block height N.
 *
-* The hash of block N-1 is used as the random seed to pick a winner. However, to make cheating by
-* miners even more costly (they must pay transaction fees to another miner to get their entries
-* on the list), only deposits received before block N-1 can win.
-*
-* See "On Bitcoin as a public randomess source" by Bonneau, Clark, and Goldfeder for an
-* analysis of miners trying to cheat by throwing away winning block hashes:
-*    https://pdfs.semanticscholar.org/ebae/9c7d91ea8b6a987642040a2142cc5ea67f7d.pdf
-* Cheating only pays if miners can win more than twice what they earn mining a block;
-* the reward is currently 2 ETH (plus fees), so we're OK using the block hash as our
-* randomness source as long a cheating miner can't win more than 4 ETH.
+* The hash of the block after each entry is used as that randomness source to decide if the
+* entry wins or loses. See ATTACKS.md for why this is OK for this use case.
 */
 
 pragma solidity ^0.5.8;
@@ -37,9 +30,9 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 contract EntryDeque {
     struct Entry {
         uint256 amount;
+        uint256 winAmount;
         address payable depositor;
         uint256 blockNumber;
-        uint256 gasprice;
     }
     mapping(uint256 => Entry) internal entries;
     uint256 internal nFirst = 2**255;
@@ -49,13 +42,13 @@ contract EntryDeque {
         return nLast < nFirst;
     }
 
-    function first() internal view returns (uint256 _amount, address payable _depositor, uint256 _blockNumber, uint256 _gasprice) {
+    function first() internal view returns (uint256 _amount, uint256 _winAmount, address payable _depositor, uint256 _blockNumber) {
         require(!empty());
 
         _amount = entries[nFirst].amount;
+        _winAmount = entries[nFirst].winAmount;
         _depositor = entries[nFirst].depositor;
         _blockNumber = entries[nFirst].blockNumber;
-        _gasprice = entries[nFirst].gasprice;
     }
 
     function popFirst() internal {
@@ -65,93 +58,89 @@ contract EntryDeque {
         nFirst += 1;
     }
 
-    function pushLast(uint256 _amount, address payable _depositor, uint256 _blockNumber, uint256 _gasprice) internal {
+    function pushLast(uint256 _amount, uint256 _winAmount, address payable _depositor, uint256 _blockNumber) internal {
         nLast += 1;
-        entries[nLast] = Entry(_amount, _depositor, _blockNumber, _gasprice);
+        entries[nLast] = Entry(_amount, _winAmount, _depositor, _blockNumber);
     }
 }
 
 contract Thresher is EntryDeque, ReentrancyGuard {
     bytes32 public randomHash;
-    uint256 public payoutThreshold;
-    uint256 public tornadoDepositGas; // Amount of gas for a Tornado deposit
+    uint256 public maxPayout;
 
     event Win(address indexed depositor);
     event Lose(address indexed depositor);
 
     /**
       @dev The constructor
-      @param _payoutThreshold Amount to accumulate / pay out (e.g. 0.1 ether)
-      @param _tornadoDepositGas How much gas a Tornado deposit costs (1 million)
+      @param _maxPayout Maximum win amount
     **/
-    constructor(uint256 _payoutThreshold, uint256 _tornadoDepositGas) public {
-        // Sanity check:
-        payoutThreshold = _payoutThreshold;
-        require(payoutThreshold > 0);
-        require(payoutThreshold < 4 ether);
+    constructor(uint256 _maxPayout) public {
+        maxPayout = _maxPayout;
+        require(maxPayout > 0);
+        require(maxPayout < 4 ether); // more than twice block reward is insecure
 
-        tornadoDepositGas = _tornadoDepositGas;
-
+        // initial value of randomHash is arbitrary (Gavin likes 11)
         randomHash = keccak256(abi.encode("Eleven!"));
     }
 
     /**
       @dev Deposit funds; rejects too-large deposits.
     **/
-    function deposit() external payable nonReentrant {
+    function deposit(uint256 _winAmount) external payable nonReentrant {
         uint256 v = msg.value;
 
-        // If the user wins, they'll get the payout threshold plus enough
-        // ether to pay for a tornado deposit. We use whatever gasprice that
-        // their wallet used for this deposit to figure out how much
-        // the withdrawal will be.
-        uint256 withdrawAmount = payoutThreshold + tornadoDepositGas*tx.gasprice;
+        require(_winAmount > 0, "Win amount must be greater than zero");
+        require(_winAmount <= maxPayout, "Win amount too large");
 
-        // Don't allow ridiculous withdraw amounts that would otherwise be possible
-        // be sending with a ridiculously large gasprice
-        require(withdrawAmount <= 2*payoutThreshold);
-
-        // And don't allow depositing more than threshold+gas-- prevents
+        // Don't allow depositing more than win amount-- prevents
         // users from losing coins by sending 1 ETH and 'winning' just 0.1
-        require(v <= withdrawAmount, "Deposit amount too large");
+        require(v <= _winAmount, "Deposit amount too large");
 
         // Q: Any reason to fail if the msg.value is tiny (e.g. 1 wei)?
-        // I can't see any reason to enforce a minimum; gas costs make attacks
-        // expensive.
+        // I can't see any reason to enforce a minimum; gas costs make it
+        // expensive to submit lots of tiny deposits.
 
         uint256 currentBlock = block.number;
-        pushLast(v, msg.sender, currentBlock, tx.gasprice);
+        pushLast(v, _winAmount, msg.sender, currentBlock);
 
         bool winner = false;
-        uint256 amount;
-        address payable depositor;
-        uint256 blockNumber;
-        uint256 gasprice;
         bytes32 hash = randomHash;
         
         // Maximum one payout per deposit, because multiple transfers could cost a lot of gas
         // ... but usability is better (faster win/didn't win decisions) if we keep going until
         // we either pay out or don't have any entries old enough to pay out:
         while (!winner && !empty()) {
-            (amount, depositor, blockNumber, gasprice) = first();
-            if (blockNumber > currentBlock-2) {
-                break;
-            }
-            // amount is how much they put in, withdrawAmount is how much they will win if they win:
-            withdrawAmount = payoutThreshold + tornadoDepositGas*gasprice;
-            if (address(this).balance < withdrawAmount) {
-                break;
-            }
+            uint256 amount;
+            uint256 winAmount;
+            address payable depositor;
+            uint256 blockNumber;
+            (amount, winAmount, depositor, blockNumber) = first();
 
+            if (blockNumber+2 > currentBlock) {
+                break;  // No entries old enough to win: do nothing
+            }
+            if (address(this).balance < winAmount) {
+                break; // Can't payout if entry wins: do nothing
+            }
             popFirst();
 
             // a different hash is computed for every entry to make it more difficult for somebody
-            // to arrange for their own entries to win
-            bytes32 b = hash ^ blockhash(currentBlock-1);
-            hash = keccak256(abi.encodePacked(b));
+            // to arrange for their own entries to win.
+            // Transactions only have access to the last 256 blocks, so:
+            if ((blockNumber+256) > currentBlock) {
+                bytes32 b = hash ^ blockhash(blockNumber+1);
+                hash = keccak256(abi.encodePacked(b));
+            }
+            else {
+                // There is a very mild attack possible here if there are no deposits (or the
+                // contract has a balance < winAmount) for 256 blocks (see ATTACKS.md for
+                // details and mitigation strategies).
+                hash = keccak256(abi.encodePacked(hash));
+            }
 
-            if (amount >= pickWinningThreshold(randomHash, withdrawAmount)) {
-                (bool success, ) = depositor.call.value(withdrawAmount)("");
+            if (amount >= pickWinningThreshold(hash, winAmount)) {
+                (bool success, ) = depositor.call.value(winAmount)("");
                 require(success, "Transfer to winner failed");
                 emit Win(depositor);
                 winner = true;

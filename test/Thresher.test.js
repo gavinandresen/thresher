@@ -11,39 +11,44 @@ contract('Thresher', accounts => {
     let thresher
     let sender = accounts[1]
     let snapshotId
-    let tornadoDepositETH  // Cost of tornado deposit in ETH
-    let payoutThreshold
-    let oneGWEI = web3.utils.toBN(web3.utils.toWei('1', 'gwei'))
+
+    let zeroETH = web3.utils.toBN(web3.utils.toWei('0', 'ether'))
+    let halfETH = web3.utils.toBN(web3.utils.toWei('0.5', 'ether'))
+    let oneETH = web3.utils.toBN(web3.utils.toWei('1', 'ether'))
+    let tenETH = web3.utils.toBN(web3.utils.toWei('10', 'ether'))
 
     before(async () => {
         thresher = await Thresher.deployed()
-        let tornadoDepositGas = await thresher.tornadoDepositGas()
-        tornadoDepositETH = tornadoDepositGas.mul(oneGWEI)
-        payoutThreshold = web3.utils.toBN(await thresher.payoutThreshold())
 
         snapshotId = await takeSnapshot() 
     })
 
     describe('#deposit', () => {
         it('should handle 0-value deposits', async () => {
-            let value = web3.utils.toWei('0.0', 'ether')
-            let r = await thresher.deposit({value, from: sender, gasPrice: oneGWEI}).should.be.fulfilled
+            // win one ETH, depositing zero ETH (always lose):
+            let r = await thresher.deposit(oneETH, {value: zeroETH, from: sender}).should.be.fulfilled
         })
         it('should handle max-value deposits', async () => {
-            let value = payoutThreshold.add(tornadoDepositETH)
-            let r = await thresher.deposit({value, from: sender, gasPrice: oneGWEI}).should.be.fulfilled
+            let r = await thresher.deposit(oneETH, {value: oneETH, from: sender}).should.be.fulfilled
         })
         it('should throw if deposit too large', async () => {
-            let value = payoutThreshold.add(tornadoDepositETH).add(web3.utils.toBN(1))
-            const error = await thresher.deposit({value, from: sender, gasPrice: oneGWEI}).should.be.rejected
+            let v = halfETH.add(web3.utils.toBN('1'))
+            const error = await thresher.deposit(halfETH, {value: v, from: sender}).should.be.rejected
             error.reason.should.be.equal('Deposit amount too large')
+        })
+        it('should throw if win amount zero', async () => {
+            const error = await thresher.deposit(zeroETH, {value: zeroETH, from: sender}).should.be.rejected
+            error.reason.should.be.equal('Win amount must be greater than zero')
+        })
+        it('should throw if win amount too large', async () => {
+            const error = await thresher.deposit(tenETH, {value: oneETH, from: sender}).should.be.rejected
+            error.reason.should.be.equal('Win amount too large')
         })
         it('should win/lose at random', async () => {
             let winCount = 0
             let loseCount = 0
-            let value = payoutThreshold.add(tornadoDepositETH).div(web3.utils.toBN(2))
             for (var i = 0; i < 34; i++) {
-                let r = await thresher.deposit({value, from: sender, gasPrice: oneGWEI}).should.be.fulfilled
+                let r = await thresher.deposit(oneETH, {value: halfETH, from: sender}).should.be.fulfilled
                 for (var n = 0; n < r.logs.length; n++) {
                     if (r.logs[n].event == 'Win') {
                         winCount += 1
@@ -56,10 +61,11 @@ contract('Thresher', accounts => {
             // 32 of the 34 deposits should have been decided at this point
             // The chances of all of them winning or losing are 2^32-- one
             // in four billion. It COULD happen...
-            assert(winCount > 0, 'no wins')
-            assert(loseCount > 0, 'no losses')
             console.log('Win: ', winCount)
             console.log('Lose: ', loseCount)
+            assert(winCount+loseCount > 0, 'no win/lose events emitted')
+            assert(winCount > 0, 'no wins')
+            assert(loseCount > 0, 'no losses')
         })
     })
 
