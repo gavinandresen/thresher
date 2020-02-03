@@ -70,6 +70,7 @@ contract Thresher is EntryDeque, ReentrancyGuard {
 
     event Win(address indexed depositor);
     event Lose(address indexed depositor);
+    event TransferError(address indexed depositor);
 
     /**
       @dev The constructor
@@ -140,10 +141,19 @@ contract Thresher is EntryDeque, ReentrancyGuard {
             }
 
             if (amount >= pickWinningThreshold(hash, winAmount)) {
-                (bool success, ) = depositor.call.value(winAmount)("");
-                require(success, "Transfer to winner failed");
-                emit Win(depositor);
                 winner = true;
+                (bool success, ) = depositor.call.value(winAmount)("");
+
+                if (success) {
+                    emit Win(depositor);
+                }
+                // We can't require(success), because it opens up a
+                // denial-of-service attack (depositor could ask us to pay
+                // to a contract that always failed). The best we can do
+                // is log the failed payment attempt and move on.
+                else {
+                    emit TransferError(depositor);
+                }
             }
             else {
                 emit Lose(depositor);
