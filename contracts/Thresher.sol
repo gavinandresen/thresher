@@ -96,13 +96,6 @@ contract Thresher is EntryDeque, ReentrancyGuard {
     }
 
     /**
-      @dev Fallback function, just calls deposit.
-    **/
-    function () external payable {
-        this.deposit();
-    }
-
-    /**
       @dev Deposit funds; rejects too-large deposits.
     **/
     function deposit() external payable nonReentrant {
