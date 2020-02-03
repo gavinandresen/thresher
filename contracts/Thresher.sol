@@ -14,8 +14,8 @@
 *
 * Winners are determined as a side effect of processing a new deposit at some current block height N.
 *
-* The hash of the block after each entry is used as that randomness source to decide if the
-* entry wins or loses. See ATTACKS.md for why this is OK for this use case.
+* The hash of the block following each entry is used as the entropy source to decide if the
+* entry wins or loses. See ATTACKS.md for why this is OK for this particular use case.
 */
 
 pragma solidity ^0.5.8;
