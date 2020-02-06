@@ -4,7 +4,7 @@ require('chai')
   .should()
 
 const { toBN, randomHex } = require('web3-utils')
-const { takeSnapshot, revertSnapshot } = require('../lib/ganacheHelper')
+const { takeSnapshot, revertSnapshot, mineBlock } = require('../lib/ganacheHelper')
 const Thresher = artifacts.require('./Thresher.sol')
 
 contract('Thresher', accounts => {
@@ -47,7 +47,9 @@ contract('Thresher', accounts => {
         it('should win/lose at random', async () => {
             let winCount = 0
             let loseCount = 0
-            for (var i = 0; i < 34; i++) {
+            // Pre-fund by sending ETH with a do-nothing processOldest() call:
+            await thresher.processOldest({value: tenETH}).should.be.fulfilled
+            for (var i = 0; i < 32; i++) { // 32 deposits...
                 let r = await thresher.contribute(oneETH, {value: halfETH, from: sender}).should.be.fulfilled
                 for (var n = 0; n < r.logs.length; n++) {
                     if (r.logs[n].event == 'Win') {
@@ -58,12 +60,25 @@ contract('Thresher', accounts => {
                     }
                 }
             }
-            // 32 of the 34 deposits should have been decided at this point
-            // The chances of all of them winning or losing are 2^32-- one
+            // Last two contribute transactions will be undecided until two blocks are mined:
+            await mineBlock()
+            await mineBlock()
+            for (var i = 0; i < 2; i++) {
+                let r = await thresher.processOldest().should.be.fulfilled
+                for (var n = 0; n < r.logs.length; n++) {
+                    if (r.logs[n].event == 'Win') {
+                        winCount += 1
+                    }
+                    if (r.logs[n].event == 'Lose') {
+                        loseCount += 1
+                    }
+                }
+            }
+            // The chances of all 32 winning or losing are 2^32-- one
             // in four billion. It COULD happen...
             console.log('Win: ', winCount)
             console.log('Lose: ', loseCount)
-            assert(winCount+loseCount > 0, 'no win/lose events emitted')
+            assert(winCount+loseCount == 32, 'Missing win/lose events')
             assert(winCount > 0, 'no wins')
             assert(loseCount > 0, 'no losses')
         })

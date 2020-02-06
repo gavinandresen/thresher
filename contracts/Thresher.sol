@@ -72,6 +72,7 @@ contract Thresher is EntryDeque, ReentrancyGuard {
     bytes32 public randomHash;
     uint256 public maxPayout;
 
+    event Contribute(address indexed depositor);
     event Win(address indexed depositor);
     event Lose(address indexed depositor);
     event TransferError(address indexed depositor);
@@ -92,7 +93,7 @@ contract Thresher is EntryDeque, ReentrancyGuard {
     /**
       @dev Contribute funds; rejects too-large deposits.
     **/
-    function contribute(uint256 _winAmount) external payable nonReentrant {
+    function contribute(uint256 _winAmount) external payable {
         uint256 v = msg.value;
 
         require(_winAmount > 0, "Win amount must be greater than zero");
@@ -109,63 +110,67 @@ contract Thresher is EntryDeque, ReentrancyGuard {
         uint256 currentBlock = block.number;
         pushLast(v, _winAmount, msg.sender, currentBlock);
 
-        bool winner = false;
-        bytes32 hash = randomHash;
-        
-        // Maximum one payout per contribution, because multiple transfers could cost a lot of gas
-        // ... but usability is better (faster win/didn't win decisions) if we keep going until
-        // we either pay out or don't have any entries old enough to pay out:
-        while (!winner && !empty()) {
-            uint256 amount;
-            uint256 winAmount;
-            address payable depositor;
-            uint256 blockNumber;
-            (amount, winAmount, depositor, blockNumber) = first();
+        emit Contribute(msg.sender);
 
-            if (blockNumber+2 > currentBlock) {
-                break;  // No entries old enough to win: do nothing
-            }
-            if (address(this).balance < winAmount) {
-                break; // Can't payout if entry wins: do nothing
-            }
-            popFirst();
+        this.processOldest();
+    }
 
-            // a different hash is computed for every entry to make it more difficult for somebody
-            // to arrange for their own entries to win.
-            // Transactions only have access to the last 256 blocks, so:
-            if ((blockNumber+256) > currentBlock) {
-                bytes32 b = hash ^ blockhash(blockNumber+1);
-                hash = keccak256(abi.encodePacked(b));
-            } else {
-                // There is a very mild attack possible here if there are no contributions (or the
-                // contract has a balance < winAmount) for 256 blocks (see ATTACKS.md for
-                // details and mitigation strategies).
-                hash = keccak256(abi.encodePacked(hash));
-            }
 
-            if (amount >= pickWinningThreshold(hash, winAmount)) {
-                winner = true;
-
-                // transfer used to be the recommended way of transferring ether,
-                // but .call.value()() is now Best Practice
-                // (see https://diligence.consensys.net/blog/2019/09/stop-using-soliditys-transfer-now/)
-                // solhint-disable-next-line avoid-call-value
-                (bool success, ) = depositor.call.value(winAmount)("");
-
-                if (success) {
-                    emit Win(depositor);
-                } else {
-                    // We can't require(success), because it opens up a
-                    // denial-of-service attack (depositor could ask us to pay
-                    // to a contract that always failed). The best we can do
-                    // is log the failed payment attempt and move on.
-                    emit TransferError(depositor);
-                }
-            } else {
-                emit Lose(depositor);
-            }
+    /**
+      @dev Process oldest entry, if possible.
+    **/
+    function processOldest() external payable nonReentrant {
+        if (empty()) {
+            return;
         }
-        randomHash = hash;
+
+        uint256 currentBlock = block.number;
+        uint256 amount;
+        uint256 winAmount;
+        address payable depositor;
+        uint256 blockNumber;
+        (amount, winAmount, depositor, blockNumber) = first();
+
+        if (blockNumber+2 > currentBlock) {
+            return;  // No entries old enough to win: do nothing
+        }
+        if (address(this).balance < winAmount) {
+            return; // Can't payout if entry wins: do nothing
+        }
+        popFirst();
+
+        // a different hash is computed for every entry to make it more difficult for somebody
+        // to arrange for their own entries to win.
+        // Transactions only have access to the last 256 blocks, so:
+        if ((blockNumber+256) > currentBlock) {
+            bytes32 b = randomHash ^ blockhash(blockNumber+1);
+            randomHash = keccak256(abi.encodePacked(b));
+        } else {
+            // There is a very mild attack possible here if there are no contributions (or the
+            // contract has a balance < winAmount) for 256 blocks (see ATTACKS.md for
+            // details and mitigation strategies).
+            randomHash = keccak256(abi.encodePacked(randomHash));
+        }
+
+        if (amount >= pickWinningThreshold(randomHash, winAmount)) {
+            // transfer used to be the recommended way of transferring ether,
+            // but .call.value()() is now Best Practice
+            // (see https://diligence.consensys.net/blog/2019/09/stop-using-soliditys-transfer-now/)
+            // solhint-disable-next-line avoid-call-value
+            (bool success, ) = depositor.call.value(winAmount)("");
+
+            if (success) {
+                emit Win(depositor);
+            } else {
+                // We can't require(success), because it opens up a
+                // denial-of-service attack (depositor could ask us to pay
+                // to a contract that always failed). The best we can do
+                // is log the failed payment attempt and move on.
+                emit TransferError(depositor);
+            }
+        } else {
+            emit Lose(depositor);
+        }
     }
 
     // Return a number between 0 and max, given a random hash:
