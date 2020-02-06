@@ -23,32 +23,32 @@ contract('Thresher', accounts => {
         snapshotId = await takeSnapshot() 
     })
 
-    describe('#deposit', () => {
+    describe('#contribute', () => {
         it('should handle 0-value deposits', async () => {
             // win one ETH, depositing zero ETH (always lose):
-            let r = await thresher.deposit(oneETH, {value: zeroETH, from: sender}).should.be.fulfilled
+            let r = await thresher.contribute(oneETH, {value: zeroETH, from: sender}).should.be.fulfilled
         })
         it('should handle max-value deposits', async () => {
-            let r = await thresher.deposit(oneETH, {value: oneETH, from: sender}).should.be.fulfilled
+            let r = await thresher.contribute(oneETH, {value: oneETH, from: sender}).should.be.fulfilled
         })
         it('should throw if deposit too large', async () => {
             let v = halfETH.add(web3.utils.toBN('1'))
-            const error = await thresher.deposit(halfETH, {value: v, from: sender}).should.be.rejected
-            error.reason.should.be.equal('Deposit amount too large')
+            const error = await thresher.contribute(halfETH, {value: v, from: sender}).should.be.rejected
+            error.reason.should.be.equal('Amount too large')
         })
         it('should throw if win amount zero', async () => {
-            const error = await thresher.deposit(zeroETH, {value: zeroETH, from: sender}).should.be.rejected
+            const error = await thresher.contribute(zeroETH, {value: zeroETH, from: sender}).should.be.rejected
             error.reason.should.be.equal('Win amount must be greater than zero')
         })
         it('should throw if win amount too large', async () => {
-            const error = await thresher.deposit(tenETH, {value: oneETH, from: sender}).should.be.rejected
+            const error = await thresher.contribute(tenETH, {value: oneETH, from: sender}).should.be.rejected
             error.reason.should.be.equal('Win amount too large')
         })
         it('should win/lose at random', async () => {
             let winCount = 0
             let loseCount = 0
             for (var i = 0; i < 34; i++) {
-                let r = await thresher.deposit(oneETH, {value: halfETH, from: sender}).should.be.fulfilled
+                let r = await thresher.contribute(oneETH, {value: halfETH, from: sender}).should.be.fulfilled
                 for (var n = 0; n < r.logs.length; n++) {
                     if (r.logs[n].event == 'Win') {
                         winCount += 1

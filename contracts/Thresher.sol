@@ -90,21 +90,21 @@ contract Thresher is EntryDeque, ReentrancyGuard {
     }
 
     /**
-      @dev Deposit funds; rejects too-large deposits.
+      @dev Contribute funds; rejects too-large deposits.
     **/
-    function deposit(uint256 _winAmount) external payable nonReentrant {
+    function contribute(uint256 _winAmount) external payable nonReentrant {
         uint256 v = msg.value;
 
         require(_winAmount > 0, "Win amount must be greater than zero");
         require(_winAmount <= maxPayout, "Win amount too large");
 
-        // Don't allow depositing more than win amount-- prevents
+        // Don't allow contributing more than win amount-- prevents
         // users from losing coins by sending 1 ETH and 'winning' just 0.1
-        require(v <= _winAmount, "Deposit amount too large");
+        require(v <= _winAmount, "Amount too large");
 
         // Q: Any reason to fail if the msg.value is tiny (e.g. 1 wei)?
         // I can't see any reason to enforce a minimum; gas costs make it
-        // expensive to submit lots of tiny deposits.
+        // expensive to submit lots of tiny contributions.
 
         uint256 currentBlock = block.number;
         pushLast(v, _winAmount, msg.sender, currentBlock);
@@ -112,7 +112,7 @@ contract Thresher is EntryDeque, ReentrancyGuard {
         bool winner = false;
         bytes32 hash = randomHash;
         
-        // Maximum one payout per deposit, because multiple transfers could cost a lot of gas
+        // Maximum one payout per contribution, because multiple transfers could cost a lot of gas
         // ... but usability is better (faster win/didn't win decisions) if we keep going until
         // we either pay out or don't have any entries old enough to pay out:
         while (!winner && !empty()) {
@@ -137,7 +137,7 @@ contract Thresher is EntryDeque, ReentrancyGuard {
                 bytes32 b = hash ^ blockhash(blockNumber+1);
                 hash = keccak256(abi.encodePacked(b));
             } else {
-                // There is a very mild attack possible here if there are no deposits (or the
+                // There is a very mild attack possible here if there are no contributions (or the
                 // contract has a balance < winAmount) for 256 blocks (see ATTACKS.md for
                 // details and mitigation strategies).
                 hash = keccak256(abi.encodePacked(hash));
