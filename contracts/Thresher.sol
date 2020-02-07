@@ -69,6 +69,8 @@ contract EntryDeque {
 }
 
 contract Thresher is EntryDeque, ReentrancyGuard {
+    uint256 constant TRANSFER_GAS_COST = 21000;
+
     bytes32 public randomHash;
     uint256 public maxPayout;
 
@@ -123,47 +125,56 @@ contract Thresher is EntryDeque, ReentrancyGuard {
     }
 
     /**
-      @dev Process oldest entry, if possible.
+      @dev Process all entries older than 2 blocks
     **/
-    function processOldest() external nonReentrant {
+    function processAll() external {
+        while (gasleft() > TRANSFER_GAS_COST && this.processOldest()) {
+        }
+    }
+
+    /**
+      @dev Process oldest entry, if possible.
+      @return true if an entry was processed
+    **/
+    function processOldest() external nonReentrant returns (bool) {
         if (empty()) {
-            return;
+            return false;
         }
 
         uint256 currentBlock = block.number;
-        uint256 amount;
+        uint256 amountContributed;
         uint256 winAmount;
         address payable depositor;
         uint256 blockNumber;
-        (amount, winAmount, depositor, blockNumber) = first();
+        (amountContributed, winAmount, depositor, blockNumber) = first();
 
         if (blockNumber+2 > currentBlock) {
-            return;  // No entries old enough to win: do nothing
+            return false;  // No entries old enough to win: do nothing
         }
         if (address(this).balance < winAmount) {
-            return; // Can't payout if entry wins: do nothing
+            return false; // Can't payout if entry wins: do nothing
         }
         popFirst();
 
-        // a different hash is computed for every entry to make it more difficult for somebody
-        // to arrange for their own entries to win.
+        uint256 winningThreshold = ~uint256(0);
+
         // Transactions only have access to the last 256 blocks, so:
         if ((blockNumber+256) > currentBlock) {
+            // a different hash is computed for every entry to make it more difficult for somebody
+            // to arrange for their own entries to win
             bytes32 b = randomHash ^ blockhash(blockNumber+1);
             randomHash = keccak256(abi.encodePacked(b));
-        } else {
-            // There is a very mild attack possible here if there are no contributions (or the
-            // contract has a balance < winAmount) for 256 blocks (see ATTACKS.md for
-            // details and mitigation strategies).
-            randomHash = keccak256(abi.encodePacked(randomHash));
+            winningThreshold = pickWinningThreshold(randomHash, winAmount);
         }
+        // Old entries always lose. It is up to the consumers of this contract to
+        // make sure they are processed before 256 blocks go by.
 
-        if (amount >= pickWinningThreshold(randomHash, winAmount)) {
+        if (amountContributed >= winningThreshold) {
             // transfer used to be the recommended way of transferring ether,
             // but .call.value()() is now Best Practice
             // (see https://diligence.consensys.net/blog/2019/09/stop-using-soliditys-transfer-now/)
             // solhint-disable-next-line avoid-call-value
-            (bool success, ) = depositor.call.value(winAmount)("");
+            (bool success, ) = depositor.call.gas(TRANSFER_GAS_COST).value(winAmount)("");
 
             if (success) {
                 emit Win(depositor);
@@ -177,6 +188,7 @@ contract Thresher is EntryDeque, ReentrancyGuard {
         } else {
             emit Lose(depositor);
         }
+        return true;
     }
 
     // Return a number between 0 and max, given a random hash:

@@ -32,32 +32,11 @@ contract, so as long as the win/lose decision is based on a future
 block **AND** they cannot influence **WHICH** block is used for the decision
 they cannot gain an unfair advantage.
 
-There are two edge cases where the win/lose decision is **not** based on
-a future block, because only the last 256 block hashes are available
-to the contract:
+Unless I made a mistake, the contract's payout code never pays an
+entry until after it has been mined, and it uses the hash of a block
+after the entry to contribute to the random seed.
 
-1. If the contract balance is less than the payout amount for more
-than 256 blocks after the deposit.
-2. If there is a gap of more than 256 blocks between deposits
-
-In those cases, the win/lose decision re-uses the hash state of the
-contract at the time of the initial deposit. So if a depositor knows
-that the contract will have very few deposits, they could:
-
-Submit always-win deposits to the contract until it's internal hash
-state is favorable.
-Submit a deposit that they know will win, if more than 256 blocks go
-by before the win/lose decision is triggered.
-
-The first edge case can be mitigated by "priming" the contract with
-some ETH, so it always has enough to pay out after two blocks. Doing
-that is a good idea for usability, anyway, and is easily accomplished
-by including some initial ETH when it is deployed.
-
-The second can be mitigated by ensuring that there is a steady stream
-of deposits to trigger win/lose decisions. I (or anybody) could run a
-process that watches the chain and makes an 'always wins' deposit
-(e.g. deposit 0.01 ETH to win 0.01 ETH) if more than 200 blocks have
-gone by since a deposit from somebody else. If I did the math right,
-the cost would be less than 50 US cents per day at current gas
-prices.
+Entries older than 256 blocks always lose (because contracts only have
+access to the last 256 block hashes). I plan on running a process that
+watches the contract state and triggers win/lose decisions after 200
+blocks (if necessary).

@@ -64,7 +64,7 @@ contract('Thresher', accounts => {
             await mineBlock()
             await mineBlock()
             for (var i = 0; i < 2; i++) {
-                let r = await thresher.processOldest().should.be.fulfilled
+                let r = await thresher.processAll().should.be.fulfilled
                 for (var n = 0; n < r.logs.length; n++) {
                     if (r.logs[n].event == 'Win') {
                         winCount += 1
@@ -81,6 +81,29 @@ contract('Thresher', accounts => {
             assert(winCount+loseCount == 32, 'Missing win/lose events')
             assert(winCount > 0, 'no wins')
             assert(loseCount > 0, 'no losses')
+        })
+        it('Old entries should always lose', async () => {
+            let winCount = 0
+            let loseCount = 0
+
+            thresher.contribute(oneETH, {value: oneETH, from: sender}).should.be.fulfilled
+            thresher.contribute(oneETH, {value: oneETH, from: sender}).should.be.fulfilled
+
+            // Mine 256 blocks...
+            for (var i = 0; i < 256; i++) {
+                await mineBlock();
+            }
+            let r = await thresher.processAll().should.be.fulfilled
+            for (var n = 0; n < r.logs.length; n++) {
+                if (r.logs[n].event == 'Win') {
+                    winCount += 1
+                }
+                if (r.logs[n].event == 'Lose') {
+                    loseCount += 1
+                }
+            }
+            assert(winCount == 0, "Old entries should always lose")
+            assert(loseCount == 2, "Old entries should always lose")
         })
     })
 
