@@ -117,9 +117,15 @@ contract Thresher is EntryDeque, ReentrancyGuard {
 
 
     /**
+      @dev Donate funds; use this to 'prime' the contact so users don't have to wait for win payouts
+    **/
+    function increaseBalance() external payable {
+    }
+
+    /**
       @dev Process oldest entry, if possible.
     **/
-    function processOldest() external payable nonReentrant {
+    function processOldest() external nonReentrant {
         if (empty()) {
             return;
         }

@@ -47,8 +47,8 @@ contract('Thresher', accounts => {
         it('should win/lose at random', async () => {
             let winCount = 0
             let loseCount = 0
-            // Pre-fund by sending ETH with a do-nothing processOldest() call:
-            await thresher.processOldest({value: tenETH}).should.be.fulfilled
+            // Pre-fund with 10 eth so wins never wait to payout:
+            await thresher.increaseBalance({value: tenETH}).should.be.fulfilled
             for (var i = 0; i < 32; i++) { // 32 deposits...
                 let r = await thresher.contribute(oneETH, {value: halfETH, from: sender}).should.be.fulfilled
                 for (var n = 0; n < r.logs.length; n++) {
