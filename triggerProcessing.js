@@ -18,6 +18,7 @@ TRACE=1
  */
 
 const assert = require('assert');
+const BN = require('bn');
 const Web3 = require('web3');
 const PrivateKeyProvider = require("truffle-privatekey-provider");
 const { toWei, fromWei } = require('web3-utils');
@@ -56,7 +57,12 @@ async function init() {
     const account = web3.eth.accounts.privateKeyToAccount('0x' + process.env.WALLET_PRIVATE_KEY);
     web3.eth.accounts.wallet.add(account);
     web3.eth.defaultAccount = account.address;
-    console.log(`Sending transcations (paying gas) from ${web3.eth.defaultAccount}`);
+    const balance = new web3.utils.BN(await web3.eth.getBalance(account.address));
+    if (balance.lt(new web3.utils.BN(toWei('0.01', 'ether')))) {
+        console.log(`${account.address} balance ${balance}; send it at least 0.01 ETH`)
+        process.exit(1);
+    }
+    console.log(`Sending transcations (paying gas) from ${account.address}`);
 
     let contractJson = require('./build/contracts/Thresher.json');
 
