@@ -25,11 +25,19 @@ contract('Thresher', accounts => {
 
     describe('#contribute', () => {
         it('should handle 0-value deposits', async () => {
+            await thresher.increaseBalance({value: oneETH}).should.be.fulfilled
             // win one ETH, depositing zero ETH (always lose):
             let r = await thresher.contribute(oneETH, {value: zeroETH, from: sender}).should.be.fulfilled
         })
         it('should handle max-value deposits', async () => {
             let r = await thresher.contribute(oneETH, {value: oneETH, from: sender}).should.be.fulfilled
+        })
+        it('should throw if contract balance is too low to pay out', async () => {
+            let v = halfETH.add(web3.utils.toBN('1'))
+            let error = await thresher.contribute(v, {value: halfETH, from: sender}).should.be.rejected
+            error.reason.should.be.equal('Balance too low')
+            error = await thresher.contribute(v, {value: zeroETH, from: sender}).should.be.rejected
+            error.reason.should.be.equal('Balance too low')
         })
         it('should throw if deposit too large', async () => {
             let v = halfETH.add(web3.utils.toBN('1'))

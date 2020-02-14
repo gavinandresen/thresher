@@ -100,6 +100,7 @@ contract Thresher is EntryDeque, ReentrancyGuard {
 
         require(_winAmount > 0, "Win amount must be greater than zero");
         require(_winAmount <= maxPayout, "Win amount too large");
+        require(address(this).balance >= _winAmount, "Balance too low");
 
         // Don't allow contributing more than win amount-- prevents
         // users from losing coins by sending 1 ETH and 'winning' just 0.1
@@ -156,7 +157,7 @@ contract Thresher is EntryDeque, ReentrancyGuard {
         }
         popFirst();
 
-        uint256 winningThreshold = ~uint256(0);
+        uint256 winningThreshold = ~uint256(0); // bitwise-not-0 == max uint256 value == always lose
 
         // Transactions only have access to the last 256 blocks, so:
         if ((blockNumber+256) > currentBlock) {
