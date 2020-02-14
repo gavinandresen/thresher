@@ -10,18 +10,19 @@
  * Before running, create a .env configuration file; for example:
 
 BLOCKS_TO_WAIT=3
-WEB3_EVENT_PROVIDER=ws://localhost:9545
-WALLET_PRIVATE_KEY=348ce564d4.....
+WALLET_SEED=brother arrow ...
+INFURA_PROJECT=abcdef...
 TRACE=1
 
- * ... and send some ETH to the address corresponding to WALLET_PRIVATE_KEY
+ * ... and send some ETH to the first address associated with the HD wallet WALLET_SEED
  */
 
 const assert = require('assert');
 const BN = require('bn');
 const Web3 = require('web3');
-const PrivateKeyProvider = require("truffle-privatekey-provider");
 const { toWei, fromWei } = require('web3-utils');
+const yargs = require('yargs');
+const config = require('./truffle-config.js');
 
 let web3;
 let accounts;
@@ -29,8 +30,6 @@ let thresher;
 
 let entriesWaiting = 0;
 let lastContributeBlock = 0;
-
-require('dotenv').config();
 
 function addEntry(event) {
     entriesWaiting = entriesWaiting + 1;
@@ -44,25 +43,28 @@ function removeEntry(event) {
     }
 }
 
-async function init() {
-    if (process.env.WALLET_PRIVATE_KEY === undefined) {
-        console.log("You must give a WALLET_PRIVATE_KEY=a955... in the .env file");
+async function init(argv) {
+    if (!(argv.network in config.networks)) {
+        console.log(`No network ${argv.network} in truffle-config.json`);
         process.exit(1);
     }
-
     web3 = new Web3()
-    const eventProvider = new Web3.providers.WebsocketProvider(process.env.WEB3_EVENT_PROVIDER);
-    web3.setProvider(eventProvider)
+    if ('provider' in config.networks[argv.network]) {
+        web3.setProvider(config.networks[argv.network]['provider']())
+    } else {
+        const host = config.networks[argv.network]['host'];
+        const port = config.networks[argv.network]['port'];
+        const eventProvider = new Web3.providers.WebsocketProvider(`ws://${host}:${port}`);
+        web3.setProvider(eventProvider)
+    }
+    const accountAddress = (await web3.eth.getAccounts())[0];
 
-    const account = web3.eth.accounts.privateKeyToAccount('0x' + process.env.WALLET_PRIVATE_KEY);
-    web3.eth.accounts.wallet.add(account);
-    web3.eth.defaultAccount = account.address;
-    const balance = new web3.utils.BN(await web3.eth.getBalance(account.address));
+    const balance = new web3.utils.BN(await web3.eth.getBalance(accountAddress));
     if (balance.lt(new web3.utils.BN(toWei('0.01', 'ether')))) {
-        console.log(`${account.address} balance ${balance}; send it at least 0.01 ETH`)
+        console.log(`${accountAddress} balance ${balance}; send it at least 0.01 ETH`)
         process.exit(1);
     }
-    console.log(`Sending transcations (paying gas) from ${account.address}`);
+    console.log(`Sending transcations (paying gas) from ${accountAddress} (balance: ${balance})`);
 
     let contractJson = require('./build/contracts/Thresher.json');
 
@@ -71,7 +73,7 @@ async function init() {
         const tx = await web3.eth.getTransaction(contractJson.networks[netId].transactionHash);
         thresher = new web3.eth.Contract(contractJson.abi, contractJson.networks[netId].address);
         thresher.deployedBlock = tx.blockNumber;
-        thresher.options.from = account.address;
+        thresher.options.from = accountAddress;
     } else {
         console.log("Don't know where the contract is deployed on this network");
         process.exit(1);
@@ -109,7 +111,7 @@ async function processAll() {
     let blockGap = currentBlock-lastContributeBlock;
     if (blockGap >= process.env.BLOCKS_TO_WAIT) {
         if (process.env.TRACE) {
-            console.log(`${entriesWaiting } entries waited ${blockGap} blocks, calling processAll()`);
+            console.log(`${ entriesWaiting } entries waited ${blockGap} blocks, calling processAll()`);
         }
 
         let g = await thresher.methods.processAll().estimateGas();
@@ -117,7 +119,17 @@ async function processAll() {
     }
 }
 
-init();
+const argv = yargs
+      .option('network', {
+          default: 'development',
+          describe: 'a network defined in truffle-config.js',
+          type: 'string',
+      })
+      .help()
+      .alias('help', 'h')
+      .argv;
+
+init(argv);
 
 let looper = setInterval(processAll, 10*1000);
 looper.ref();  /* Referencing the timer makes node.js loop forever */

@@ -40,31 +40,31 @@ contract('Thresher', accounts => {
             error.reason.should.be.equal('Balance too low')
         })
         it('should throw if deposit too large', async () => {
-            let v = halfETH.add(web3.utils.toBN('1'))
-            const error = await thresher.contribute(halfETH, {value: v, from: sender}).should.be.rejected
-            error.reason.should.be.equal('Amount too large')
+            let v = halfETH.add(web3.utils.toBN('1'));
+            const error = await thresher.contribute(halfETH, {value: v, from: sender}).should.be.rejected;
+            error.reason.should.be.equal('Amount too large');
         })
         it('should throw if win amount zero', async () => {
-            const error = await thresher.contribute(zeroETH, {value: zeroETH, from: sender}).should.be.rejected
-            error.reason.should.be.equal('Win amount must be greater than zero')
+            const error = await thresher.contribute(zeroETH, {value: zeroETH, from: sender}).should.be.rejected;
+            error.reason.should.be.equal('Win amount must be greater than zero');
         })
         it('should throw if win amount too large', async () => {
-            const error = await thresher.contribute(tenETH, {value: oneETH, from: sender}).should.be.rejected
-            error.reason.should.be.equal('Win amount too large')
+            const error = await thresher.contribute(tenETH, {value: oneETH, from: sender}).should.be.rejected;
+            error.reason.should.be.equal('Win amount too large');
         })
         it('should win/lose at random', async () => {
-            let winCount = 0
-            let loseCount = 0
+            let winCount = 0;
+            let loseCount = 0;
             // Pre-fund with 10 eth so wins never wait to payout:
             await thresher.increaseBalance({value: tenETH}).should.be.fulfilled
             for (var i = 0; i < 32; i++) { // 32 deposits...
-                let r = await thresher.contribute(oneETH, {value: halfETH, from: sender}).should.be.fulfilled
+                let r = await thresher.contribute(oneETH, {value: halfETH, from: sender}).should.be.fulfilled;
                 for (var n = 0; n < r.logs.length; n++) {
                     if (r.logs[n].event == 'Win') {
-                        winCount += 1
+                        winCount += 1;
                     }
                     if (r.logs[n].event == 'Lose') {
-                        loseCount += 1
+                        loseCount += 1;
                     }
                 }
             }
@@ -75,27 +75,27 @@ contract('Thresher', accounts => {
                 let r = await thresher.processAll().should.be.fulfilled
                 for (var n = 0; n < r.logs.length; n++) {
                     if (r.logs[n].event == 'Win') {
-                        winCount += 1
+                        winCount += 1;
                     }
                     if (r.logs[n].event == 'Lose') {
-                        loseCount += 1
+                        loseCount += 1;
                     }
                 }
             }
             // The chances of all 32 winning or losing are 2^32-- one
             // in four billion. It COULD happen...
-            console.log('Win: ', winCount)
-            console.log('Lose: ', loseCount)
-            assert(winCount+loseCount == 32, 'Missing win/lose events')
-            assert(winCount > 0, 'no wins')
-            assert(loseCount > 0, 'no losses')
+            console.log('Win: ', winCount);
+            console.log('Lose: ', loseCount);
+            assert(winCount+loseCount == 32, 'Missing win/lose events');
+            assert(winCount > 0, 'no wins');
+            assert(loseCount > 0, 'no losses');
         })
         it('Old entries should always lose', async () => {
-            let winCount = 0
-            let loseCount = 0
+            let winCount = 0;
+            let loseCount = 0;
 
-            thresher.contribute(oneETH, {value: oneETH, from: sender}).should.be.fulfilled
-            thresher.contribute(oneETH, {value: oneETH, from: sender}).should.be.fulfilled
+            thresher.contribute(oneETH, {value: oneETH, from: sender}).should.be.fulfilled;
+            await thresher.contribute(oneETH, {value: oneETH, from: sender}).should.be.fulfilled;
 
             // Mine 256 blocks...
             for (var i = 0; i < 256; i++) {
@@ -104,21 +104,21 @@ contract('Thresher', accounts => {
             let r = await thresher.processAll().should.be.fulfilled
             for (var n = 0; n < r.logs.length; n++) {
                 if (r.logs[n].event == 'Win') {
-                    winCount += 1
+                    winCount += 1;
                 }
                 if (r.logs[n].event == 'Lose') {
-                    loseCount += 1
+                    loseCount += 1;
                 }
             }
-            assert(winCount == 0, "Old entries should always lose")
-            assert(loseCount == 2, "Old entries should always lose")
+            assert(winCount == 0, `Old entries should always lose (win == ${winCount})`);
+            assert(loseCount == 2, `Old entries should always lose (lose == ${loseCount})`);
         })
     })
 
     afterEach(async () => {
         // Revert blockchain state between tests:
-        await revertSnapshot(snapshotId.result)
+        await revertSnapshot(snapshotId.result);
         // eslint-disable-next-line require-atomic-updates
-        snapshotId = await takeSnapshot()
+        snapshotId = await takeSnapshot();
     })
 })
