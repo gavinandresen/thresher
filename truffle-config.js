@@ -42,6 +42,16 @@ module.exports = {
 
   },
 
+  // So we can:
+  // truffle run verify Thresher --network rinkeby
+  // ... to get etherscan to show the source code, etc:
+  plugins: [
+    'truffle-plugin-verify'
+  ],
+  api_keys: {
+    etherscan: process.env.ETHERSCAN_API_KEY
+  },
+
   // Set default mocha options here, use special reporters etc.
   mocha: {
     // timeout: 100000
