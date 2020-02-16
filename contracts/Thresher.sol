@@ -126,10 +126,10 @@ contract Thresher is EntryDeque, ReentrancyGuard {
     }
 
     /**
-      @dev Process all entries older than 2 blocks
+      @dev Process all entries older than 2 blocks (or as many as we can before we run out of gas)
     **/
     function processAll() external {
-        while (gasleft() > TRANSFER_GAS_COST && this.processOldest()) {
+        while ((gasleft() > (TRANSFER_GAS_COST+9000)) && this.processOldest()) {
         }
     }
 
