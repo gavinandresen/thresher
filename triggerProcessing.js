@@ -30,55 +30,58 @@ let web3;
 let accounts;
 let thresher;
 
-let entriesWaiting = 0;
-let lastContributeBlock = 0;
+let entries = []; // Array of [ blockNumber, depositor ] pairs
 
 function addEntry(event) {
-    entriesWaiting = entriesWaiting + 1;
-    lastContributeBlock = event.blockNumber;
+    entries.push( [ event.blockNumber, event.returnValues.depositor ] );
 }
 function removeEntry(event) {
-    entriesWaiting = entriesWaiting - 1;
-    if (entriesWaiting < 0) {
-        console.log("ERROR: Entries waiting : "+entriesWaiting);
-        entriesWaiting = 0;
+    const i = entries.findIndex( (e) => e[1] == event.returnValues.depositor );
+    if (i != -1 ) {
+        entries.splice(i, 1);
     }
 }
 
-let processAllHash = null; // Will be non-null when waiting for processAll() to confirm
+let processing = false; // Will be true when waiting for processAll() to confirm
 
-async function newBlock(error, event) {
+function processAll() {
+    processing = true
+    thresher.methods.processAll().send({gas: 500*1000})
+        .on('transactionHash', function(hash) {
+        })
+        .on('confirmation', function(confirmationNumber, receipt) {
+            // Allow another processAll when confirmed:
+            if (confirmationNumber == 2) {
+                processing = false;
+            }
+        })
+        .on('receipt', function(receipt) {
+        })
+        .on('error', function(error, receipt) {
+            console.log("processAll() FAILED: "+error);
+            process.exit(1);
+        })
+}
+
+function newBlock(error, event) {
     if (error) {
         console.log(`Error with new block subscription: ${error}`);
         process.exit(1);
     }
-    if (processAllHash !== null || entriesWaiting == 0 || event.number === null) {
+    if (processing || event.number === null) {
         return;
     }
 
-    let blockGap = event.number-lastContributeBlock;
-    if (blockGap >= process.env.BLOCKS_TO_WAIT) {
-        if (process.env.TRACE) {
-            console.log(`${ entriesWaiting } entries waited ${blockGap} blocks, calling processAll()`);
-        }
-
-        lastContributeBlock += 1;
-        thresher.methods.processAll().send({gas: 500*1000})
-            .on('transactionHash', function(hash) {
-                processAllHash = hash;
-            })
-            .on('confirmation', function(confirmationNumber, receipt) {
-                console.log(receipt);
-                // Allow another processAll when confirmed:
-                if (confirmationNumber == 1) { processAllHash = null; }
-            })
-            .on('receipt', function(receipt) {
-            })
-            .on('error', function(error, receipt) {
-                console.log("processAll() FAILED: "+error);
-                process.exit(1);
-            })
+    const n = entries.reduce( (sum, e) => 
+                              (e[0]+process.env.BLOCKS_TO_WAIT > event.number) ? sum+1 : sum, 0);
+    if (n == 0) {
+        return;
     }
+
+    if (process.env.TRACE) {
+        console.log(`${n} entries waiting, calling processAll()`);
+    }
+    processAll();
 }
 
 async function init(argv) {
@@ -121,8 +124,6 @@ async function init(argv) {
     if (contractJson.networks[netId]) {
         const tx = await web3.eth.getTransaction(contractJson.networks[netId].transactionHash);
         thresher = new web3.eth.Contract(contractJson.abi, contractJson.networks[netId].address);
-        thresher.deployedBlock = tx.blockNumber;
-        console.log(`thresher deployed at ${tx.blockNumber}`);
         thresher.options.from = account.address;
     } else {
         console.log("Don't know where the contract is deployed on this network");
@@ -130,30 +131,32 @@ async function init(argv) {
     }
 
     thresher.events.Contribute({
-        fromBlock: thresher.deployedBlock,
+        fromBlock: 'latest',
         toBlock: 'latest'
     })
     .on('data', addEntry)
     .on('changed', removeEntry)
 
     thresher.events.Win({
-        fromBlock: thresher.deployedBlock,
+        fromBlock: 'latest',
         toBlock: 'latest'
     })
     .on('data', removeEntry)
     .on('changed', addEntry)
     thresher.events.Lose({
-        fromBlock: thresher.deployedBlock,
+        fromBlock: 'latest',
         toBlock: 'latest'
     })
     .on('data', removeEntry)
     .on('changed', addEntry)
     thresher.events.TransferError({
-        fromBlock: thresher.deployedBlock,
+        fromBlock: 'latest',
         toBlock: 'latest'
     })
     .on('data', removeEntry)
     .on('changed', addEntry)
+
+    processAll();
 
     web3.eth.subscribe('newBlockHeaders', newBlock);
 }
