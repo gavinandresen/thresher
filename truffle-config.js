@@ -13,7 +13,6 @@ WALLET_SEED=...12-word seed for a HD wallet
 
 require('dotenv').config();
 const HDWalletProvider = require('@truffle/hdwallet-provider');
-const Web3 = require('web3');
 
 module.exports = {
   networks: {
@@ -26,8 +25,7 @@ module.exports = {
 
     // Rinkeby testnet:
     rinkeby: {
-      provider: () => new HDWalletProvider(process.env.WALLET_SEED,
-                                          `https://rinkeby.infura.io/v3/${process.env.INFURA_PROJECT}`),
+      provider: () => new HDWalletProvider(process.env.WALLET_SEED, `https://rinkeby.infura.io/v3/${process.env.INFURA_PROJECT_ID}`),
       network_id: 4,       // Rinkeby id
       gas: 5500000,        // Ropsten has a lower block limit than mainnet
       confirmations: 2,    // # of confs to wait between deployments. (default: 0)
@@ -36,8 +34,7 @@ module.exports = {
     },
 
     mainnet: {
-      provider: () => new HDWalletProvider(process.env.WALLET_SEED,
-                                          `https://mainnet.infura.io/v3/${process.env.INFURA_PROJECT}`),
+      provider: () => new HDWalletProvider(process.env.WALLET_SEED, `https://mainnet.infura.io/v3/${process.env.INFURA_PROJECT_ID}`),
       network_id: 1,
       confirmations: 2,    // # of confs to wait between deployments. (default: 0)
       timeoutBlocks: 200,  // # of blocks before a deployment times out  (minimum/default: 50)
