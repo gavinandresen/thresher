@@ -26,8 +26,6 @@ const { toWei, fromWei } = require('web3-utils');
 const yargs = require('yargs');
 require('dotenv').config();
 
-const MIN_SEND_GAS=21272;
-
 let web3;
 let accounts;
 let thresher;
@@ -47,12 +45,14 @@ function removeEntry(event) {
     }
 }
 
+let processAllHash = null; // Will be non-null when waiting for processAll() to confirm
+
 async function newBlock(error, event) {
     if (error) {
         console.log(`Error with new block subscription: ${error}`);
         process.exit(1);
     }
-    if (entriesWaiting == 0 || event.number === null) {
+    if (processAllHash !== null || entriesWaiting == 0 || event.number === null) {
         return;
     }
 
@@ -63,10 +63,22 @@ async function newBlock(error, event) {
         }
 
         lastContributeBlock += 1;
-        let g = await thresher.methods.processAll().estimateGas() + MIN_SEND_GAS;
-        await thresher.methods.processAll().send({gas: g});
+        thresher.methods.processAll().send({gas: 500*1000})
+            .on('transactionHash', function(hash) {
+                processAllHash = hash;
+            })
+            .on('confirmation', function(confirmationNumber, receipt) {
+                console.log(receipt);
+                // Allow another processAll when confirmed:
+                if (confirmationNumber == 1) { processAllHash = null; }
+            })
+            .on('receipt', function(receipt) {
+            })
+            .on('error', function(error, receipt) {
+                console.log("processAll() FAILED: "+error);
+                process.exit(1);
+            })
     }
-    console.log(`Block ${event.number}`);
 }
 
 async function init(argv) {
@@ -90,6 +102,11 @@ async function init(argv) {
     const account = web3.eth.accounts.privateKeyToAccount('0x' + hdfirst.privateKey.toString('hex'));
     web3.eth.accounts.wallet.add(account);
     web3.eth.defaultAccount = account.address;
+    // TODO: Looks like the next version of truffle might Do the Right Thing:
+    //       https://github.com/trufflesuite/truffle/pull/2582
+    // ... which might let us specify the websocket provider in truffle-config.js,
+    // require truffle-config.js in this file and use the same provider for both
+    // truffle and this utility.
 
     const balance = new web3.utils.BN(await web3.eth.getBalance(account.address));
     if (balance.lt(new web3.utils.BN(toWei('0.01', 'ether')))) {
