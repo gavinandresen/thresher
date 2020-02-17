@@ -69,7 +69,7 @@ contract EntryDeque {
 }
 
 contract Thresher is EntryDeque, ReentrancyGuard {
-    uint256 constant TRANSFER_GAS_COST = 21000;
+    uint256 constant TRANSFER_GAS_ALLOWANCE = 50000; // Enough for transfers or simple contracts
 
     bytes32 public randomHash;
     uint256 public maxPayout;
@@ -93,51 +93,16 @@ contract Thresher is EntryDeque, ReentrancyGuard {
     }
 
     /**
-      @dev Contribute funds; rejects too-large deposits.
-    **/
-    function contribute(uint256 _winAmount) external payable {
-        uint256 v = msg.value;
-
-        require(_winAmount > 0, "Win amount must be greater than zero");
-        require(_winAmount <= maxPayout, "Win amount too large");
-        require(address(this).balance >= _winAmount, "Balance too low");
-
-        // Don't allow contributing more than win amount-- prevents
-        // users from losing coins by sending 1 ETH and 'winning' just 0.1
-        require(v <= _winAmount, "Amount too large");
-
-        // Q: Any reason to fail if the msg.value is tiny (e.g. 1 wei)?
-        // I can't see any reason to enforce a minimum; gas costs make it
-        // expensive to submit lots of tiny contributions.
-
-        uint256 currentBlock = block.number;
-        pushLast(v, _winAmount, msg.sender, currentBlock);
-
-        emit Contribute(msg.sender);
-
-        this.processOldest();
-    }
-
-
-    /**
       @dev Donate funds; use this to 'prime' the contact so users don't have to wait for win payouts
     **/
     function increaseBalance() external payable {
     }
 
     /**
-      @dev Process all entries older than 2 blocks (or as many as we can before we run out of gas)
-    **/
-    function processAll() external {
-        while ((gasleft() > (TRANSFER_GAS_COST+9000)) && this.processOldest()) {
-        }
-    }
-
-    /**
       @dev Process oldest entry, if possible.
       @return true if an entry was processed
     **/
-    function processOldest() external nonReentrant returns (bool) {
+    function processOldest() private nonReentrant returns (bool) {
         if (empty()) {
             return false;
         }
@@ -175,7 +140,7 @@ contract Thresher is EntryDeque, ReentrancyGuard {
             // but .call.value()() is now Best Practice
             // (see https://diligence.consensys.net/blog/2019/09/stop-using-soliditys-transfer-now/)
             // solhint-disable-next-line avoid-call-value
-            (bool success, ) = depositor.call.gas(TRANSFER_GAS_COST).value(winAmount)("");
+            (bool success, ) = depositor.call.gas(TRANSFER_GAS_ALLOWANCE).value(winAmount)("");
 
             if (success) {
                 emit Win(depositor);
@@ -211,5 +176,44 @@ contract Thresher is EntryDeque, ReentrancyGuard {
          choosing another number from the 2**256 range. The universe will be long dead before that happens,
          so using UniformRandomNumber.sol instead of the one-liner here would effectively be adding dead code.
         */
+    }
+
+    /**
+      @dev Contribute funds; rejects too-large deposits.
+    **/
+    function contribute(uint256 _winAmount) external payable {
+        uint256 v = msg.value;
+
+        require(_winAmount > 0, "Win amount must be greater than zero");
+        require(_winAmount <= maxPayout, "Win amount too large");
+        require(address(this).balance >= _winAmount, "Balance too low");
+
+        // Don't allow contributing more than win amount-- prevents
+        // users from losing coins by sending 1 ETH and 'winning' just 0.1
+        require(v <= _winAmount, "Amount too large");
+
+        // Q: Any reason to fail if the msg.value is tiny (e.g. 1 wei)?
+        // I can't see any reason to enforce a minimum; gas costs make it
+        // expensive to submit lots of tiny contributions.
+
+        uint256 currentBlock = block.number;
+        pushLast(v, _winAmount, msg.sender, currentBlock);
+
+        emit Contribute(msg.sender);
+
+        // Require entries include enough gas to pay out
+        // a previous winner. 45,000 is a little more than the
+        // amount of gas processOldest() consumes, without
+        // a transfer to a winner.
+        require (gasleft() > (45000+TRANSFER_GAS_ALLOWANCE));
+        processOldest();
+    }
+
+    /**
+      @dev Process all entries older than 2 blocks (or as many as we can before we run out of gas)
+    **/
+    function processAll() external {
+        while ((gasleft() > (45000+TRANSFER_GAS_ALLOWANCE)) && processOldest()) {
+        }
     }
 }

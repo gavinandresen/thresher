@@ -113,6 +113,33 @@ contract('Thresher', accounts => {
             assert(winCount == 0, `Old entries should always lose (win == ${winCount})`);
             assert(loseCount == 2, `Old entries should always lose (lose == ${loseCount})`);
         })
+        it('ProcessAll gas test', async () => {
+            // Call processAll() with varying amounts of gas to make sure
+            // it does the right thing:
+            await thresher.increaseBalance({value: tenETH}).should.be.fulfilled
+
+            let tryGas = 500000;
+            let nTries = 0;
+            while (nTries < 4) {
+                let sID = await takeSnapshot();
+                nTries += 1;
+                // Two entries...
+                thresher.contribute(halfETH, {value: halfETH, from: sender}).should.be.fulfilled;
+                await thresher.contribute(halfETH, {value: halfETH, from: sender}).should.be.fulfilled;
+                // ... ready to be processed:
+                await mineBlock();
+                await mineBlock();
+                let r = await thresher.processAll({ gas: tryGas }).should.be.fulfilled
+                let nProcessed = r.logs.length;
+                console.log(`Processing ${r.logs.length} used ${r.receipt.gasUsed} gas`);
+                tryGas = r.receipt.gasUsed+75000;
+
+                await revertSnapshot(snapshotId.result);
+                if (r.logs.length == 0) {
+                    break;
+                }
+            }
+        })
     })
 
     afterEach(async () => {
