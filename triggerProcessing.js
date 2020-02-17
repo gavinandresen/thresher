@@ -30,13 +30,13 @@ let web3;
 let accounts;
 let thresher;
 
-let entries = []; // Array of [ blockNumber, depositor ] pairs
+let entries = []; // Array of { blockNumber, depositor } objects
 
 function addEntry(event) {
-    entries.push( [ event.blockNumber, event.returnValues.depositor ] );
+    entries.push({blockNumber: event.blockNumber, depositor: event.returnValues.depositor});
 }
 function removeEntry(event) {
-    const i = entries.findIndex( (e) => e[1] == event.returnValues.depositor );
+    const i = entries.findIndex( (e) => e.depositor == event.returnValues.depositor );
     if (i != -1 ) {
         entries.splice(i, 1);
     }
@@ -72,8 +72,14 @@ function newBlock(error, event) {
         return;
     }
 
-    const n = entries.reduce( (sum, e) => 
-                              (e[0]+process.env.BLOCKS_TO_WAIT > event.number) ? sum+1 : sum, 0);
+    let n = 0;
+    let e;
+    for (e of entries) {
+        let waitUntil = e.blockNumber+Number(process.env.BLOCKS_TO_WAIT);
+        if (waitUntil <= event.number) {
+            n = n+1;
+        }
+    }
     if (n == 0) {
         return;
     }
@@ -129,28 +135,29 @@ async function init(argv) {
         console.log("Don't know where the contract is deployed on this network");
         process.exit(1);
     }
+    let currentBlock = await web3.eth.getBlockNumber()
 
     thresher.events.Contribute({
-        fromBlock: 'latest',
+        fromBlock: currentBlock-3,
         toBlock: 'latest'
     })
     .on('data', addEntry)
     .on('changed', removeEntry)
 
     thresher.events.Win({
-        fromBlock: 'latest',
+        fromBlock: currentBlock-3,
         toBlock: 'latest'
     })
     .on('data', removeEntry)
     .on('changed', addEntry)
     thresher.events.Lose({
-        fromBlock: 'latest',
+        fromBlock: currentBlock-3,
         toBlock: 'latest'
     })
     .on('data', removeEntry)
     .on('changed', addEntry)
     thresher.events.TransferError({
-        fromBlock: 'latest',
+        fromBlock: currentBlock-3,
         toBlock: 'latest'
     })
     .on('data', removeEntry)
