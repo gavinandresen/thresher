@@ -119,10 +119,10 @@ async function init(argv) {
 
     const balance = new web3.utils.BN(await web3.eth.getBalance(account.address));
     if (balance.lt(new web3.utils.BN(toWei('0.01', 'ether')))) {
-        console.log(`${account.address} balance ${balance}; send it at least 0.01 ETH`)
+        console.log(`${account.address} balance ${web3.utils.fromWei(balance)}; send it at least 0.01 ETH`)
         process.exit(1);
     }
-    console.log(`Sending transactions (paying gas) from ${account.address} (balance: ${balance})`);
+    console.log(`Sending transactions (paying gas) from ${account.address} (balance: ${web3.utils.fromWei(balance)} ETH)`);
 
     const contractJson = require('./build/contracts/Thresher.json');
 
@@ -135,35 +135,34 @@ async function init(argv) {
         console.log("Don't know where the contract is deployed on this network");
         process.exit(1);
     }
-    let currentBlock = await web3.eth.getBlockNumber()
+    let currentBlock = await web3.eth.getBlockNumber();
+    let b = (currentBlock > 256 ? currentBlock-256 : 1);
 
     thresher.events.Contribute({
-        fromBlock: currentBlock-3,
+        fromBlock: b,
         toBlock: 'latest'
     })
     .on('data', addEntry)
     .on('changed', removeEntry)
 
     thresher.events.Win({
-        fromBlock: currentBlock-3,
+        fromBlock: b,
         toBlock: 'latest'
     })
     .on('data', removeEntry)
     .on('changed', addEntry)
     thresher.events.Lose({
-        fromBlock: currentBlock-3,
+        fromBlock: b,
         toBlock: 'latest'
     })
     .on('data', removeEntry)
     .on('changed', addEntry)
     thresher.events.TransferError({
-        fromBlock: currentBlock-3,
+        fromBlock: b,
         toBlock: 'latest'
     })
     .on('data', removeEntry)
     .on('changed', addEntry)
-
-    processAll();
 
     web3.eth.subscribe('newBlockHeaders', newBlock);
 }
