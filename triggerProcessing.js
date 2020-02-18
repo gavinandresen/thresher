@@ -131,6 +131,9 @@ async function init(argv) {
         const tx = await web3.eth.getTransaction(contractJson.networks[netId].transactionHash);
         thresher = new web3.eth.Contract(contractJson.abi, contractJson.networks[netId].address);
         thresher.options.from = account.address;
+    } else if (argv.thresherAddress) {
+        thresher = new web3.eth.Contract(contractJson.abi, argv.thresherAddress);
+        thresher.options.from = account.address;
     } else {
         console.log("Don't know where the contract is deployed on this network");
         process.exit(1);
@@ -171,6 +174,11 @@ const argv = yargs
       .option('network', {
           default: 'development',
           describe: 'a network defined in truffle-config.js',
+          type: 'string',
+      })
+      .option('thresherAddress', {
+          default: null,
+          describe: 'Address of Thresher contract',
           type: 'string',
       })
       .help()
