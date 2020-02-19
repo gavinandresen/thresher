@@ -6,9 +6,11 @@ require('chai')
 const { toBN, randomHex } = require('web3-utils')
 const { takeSnapshot, revertSnapshot, mineBlock } = require('../lib/ganacheHelper')
 const Thresher = artifacts.require('./Thresher.sol')
+const GasGuzzler = artifacts.require('./GasGuzzler.sol')
 
 contract('Thresher', accounts => {
     let thresher
+    let gasGuzzler
     let sender = accounts[1]
     let snapshotId
 
@@ -19,6 +21,7 @@ contract('Thresher', accounts => {
 
     before(async () => {
         thresher = await Thresher.deployed()
+        gasGuzzler = await GasGuzzler.deployed()
 
         snapshotId = await takeSnapshot() 
     })
@@ -139,6 +142,36 @@ contract('Thresher', accounts => {
                     break;
                 }
             }
+        })
+        it('GasGuzzler test', async () => {
+            let winCount = 0;
+            let loseCount = 0;
+            let failCount = 0;
+            await thresher.increaseBalance({value: tenETH}).should.be.fulfilled
+
+            // sure-winner: should generate a TransferError
+            gasGuzzler.contribute(thresher.address, halfETH, {value: halfETH, from: sender}).should.be.fulfilled;
+            // sure-loser: should generate a Lose
+            await gasGuzzler.contribute(thresher.address, halfETH, {value: zeroETH, from: sender}).should.be.fulfilled;
+
+            await mineBlock();
+            await mineBlock();
+
+            let r = await thresher.processAll().should.be.fulfilled;
+            for (var n = 0; n < r.logs.length; n++) {
+                if (r.logs[n].event == 'Win') {
+                    winCount += 1;
+                }
+                if (r.logs[n].event == 'Lose') {
+                    loseCount += 1;
+                }
+                if (r.logs[n].event == 'TransferError') {
+                    failCount += 1;
+                }
+            }
+            assert(failCount == 1, `Gas guzzler should always lose (fail == ${failCount})`);
+            assert(loseCount == 1, `Gas guzzler should always lose (lose == ${loseCount})`);
+            assert(winCount == 0, `Gas guzzler should always lose (win == ${winCount})`);
         })
     })
 
