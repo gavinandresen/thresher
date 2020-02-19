@@ -166,12 +166,12 @@ contract Thresher is EntryDeque, ReentrancyGuard {
          We could do this:
               https://github.com/pooltogether/pooltogether-contracts/blob/master/contracts/UniformRandomNumber.sol
          ... but is the extra code worth the gas cost?
-         Lets play computer with uint256 (2**256) and the 10*17 (0.1 eth) threshold: compute
+         Lets play computer with uint256 (2**256) and a 10*18 (1 eth) win amount: compute
          how many values we should skip to avoid any bias:
-         min = (2**256 - 10**17) % 10**17
-             84007913129639936L  <<- The first 840 quadrillion hashes are biased!  But:
-         2**256 / 84007913129639936L
-              1378347407090416896591674552386804332932494391328937058907953L
+         min = (2**256 - 10**18) % 10**18
+             584,007,913,129,639,936  <<- The first 584 quadrillion hashes are biased!  But:
+         2**256 / 584007913129639936L
+              198271438852254556318206583738339193877760096077732688804486L
          This is how many times we'd need to call this routine before running into modulo bias and
          choosing another number from the 2**256 range. The universe will be long dead before that happens,
          so using UniformRandomNumber.sol instead of the one-liner here would effectively be adding dead code.
