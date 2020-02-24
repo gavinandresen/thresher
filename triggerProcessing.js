@@ -63,18 +63,27 @@ function processAll() {
         })
 }
 
+let keepAlive = 0;
+
 function newBlock(error, event) {
     if (error) {
         console.log(`Error with new block subscription: ${error}`);
         process.exit(1);
+    }
+    // Keep the websocket connection alive by
+    // sending a getPeerCount every once in a while:
+    keepAlive += 1;
+    if (keepAlive > 30) {
+	keepAlive = 0;
+	web3.eth.net.getPeerCount()
+	    .then( (n) => (n == 0 || console.log(`WARNING: NO PEERS`)));
     }
     if (processing || event.number === null) {
         return;
     }
 
     let n = 0;
-    let e;
-    for (e of entries) {
+    for (let e of entries) {
         let waitUntil = e.blockNumber+Number(process.env.BLOCKS_TO_WAIT);
         if (waitUntil <= event.number) {
             n = n+1;
@@ -99,6 +108,34 @@ async function init(argv) {
     } else {
         const eventProvider = new Web3.providers.WebsocketProvider(
             `wss://${argv.network}.infura.io/ws/v3/${process.env.INFURA_PROJECT_ID}`);
+
+	eventProvider.on("connect", () => {
+	    console.log("*** WebSocket Connected ***")
+	})
+	eventProvider.on("error", (e) => {
+	    console.log("*** WebSocket Error ***")
+            process.exit(1);
+	})
+	eventProvider.on("end", (e) => {
+	    console.log("*** WebSocket Ended ***")
+            process.exit(1);
+	})
+	eventProvider.on("close", (e) => {
+	    console.log("*** WebSocket Closed ***")
+            process.exit(1);
+	})
+	eventProvider.on("timeout", (e) => {
+	    console.log("*** WebSocket Timeout ***")
+            process.exit(1);
+	})
+	eventProvider.on("exit", (e) => {
+	    console.log("*** WebSocket Exit ***")
+            process.exit(1);
+	})
+	eventProvider.on("ready", (e) => {
+	    //console.log('*** WebSocket Ready ***')
+	})
+
         web3.setProvider(eventProvider)
     }
 
