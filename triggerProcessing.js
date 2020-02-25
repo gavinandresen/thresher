@@ -42,7 +42,8 @@ function removeEntry(event) {
     }
 }
 
-let processing = false; // Will be true when waiting for processAll() to confirm
+let processing = false; // True when waiting for processAll() to confirm
+let mightNeedToppingUp = false; // True after a Win, when we should check Thresher balance
 
 function processAll() {
     processing = true
@@ -65,6 +66,33 @@ function processAll() {
 
 let keepAlive = 0;
 
+function topUpBalance() {
+    const fromAddress = thresher.options.from;
+    return Promise.all([ thresher.methods.maxPayout().call(),
+                         web3.eth.getBalance(thresher.options.address),
+                         web3.eth.getBalance(fromAddress)
+                       ])
+        .then(function(v) {
+            const maxPay = new web3.utils.BN(v[0]);
+            const thresherBalance = new web3.utils.BN(v[1]);
+            const fromBalance = new web3.utils.BN(v[2]);
+            const _gas = new web3.utils.BN(100*1000);
+            if (thresherBalance.lt(maxPay)) {
+                const minTopUp = new web3.utils.BN(web3.utils.toWei('0.2', 'ether'));
+                const topUpAmount = web3.utils.BN.max(maxPay.sub(thresherBalance), minTopUp);
+                if (fromBalance.lt(topUpAmount.add(_gas))) {
+                    throw new Error(`Unable to top-up contract balance, ${fromAddress} balance: ${web3.utils.fromWei(fromBalance)}`);
+                }
+                return thresher.methods.increaseBalance().send({from: fromAddress, value: topUpAmount, gas: _gas})
+                .then(function() {
+                    if (process.env.TRACE) {
+                        console.log(`increaseBalance(${web3.utils.fromWei(topUpAmount)} ETH)`);
+                    }
+                })
+            }
+        })
+}
+
 function newBlock(error, event) {
     if (error) {
         console.log(`Error with new block subscription: ${error}`);
@@ -82,21 +110,34 @@ function newBlock(error, event) {
         return;
     }
 
-    let n = 0;
-    for (let e of entries) {
-        let waitUntil = e.blockNumber+Number(process.env.BLOCKS_TO_WAIT);
-        if (waitUntil <= event.number) {
-            n = n+1;
+    // If topUpBalance() generates a transaction, we need
+    // it to resolve before calling processAll() generates another
+    // transaction. So:
+    let p;
+    if (mightNeedToppingUp) {
+        mightNeedToppingUp = false;
+        p = topUpBalance();
+    } else {
+        p = Promise.resolve();
+    }
+    p.then(function() {
+        let n = 0;
+        for (let e of entries) {
+            let waitUntil = e.blockNumber+Number(process.env.BLOCKS_TO_WAIT);
+            if (waitUntil <= event.number) {
+                n = n+1;
+            }
         }
-    }
-    if (n == 0) {
-        return;
-    }
+        if (n == 0) {
+            return;
+        }
+        if (process.env.TRACE) {
+            console.log(`${n} entries waiting, calling processAll()`);
+        }
 
-    if (process.env.TRACE) {
-        console.log(`${n} entries waiting, calling processAll()`);
-    }
-    processAll();
+        processAll();
+    })
+    .catch(console.log)
 }
 
 async function init(argv) {
@@ -189,7 +230,7 @@ async function init(argv) {
         fromBlock: b,
         toBlock: 'latest'
     })
-    .on('data', removeEntry)
+    .on('data', (event) => { removeEntry(event); mightNeedToppingUp = true;})
     .on('changed', addEntry)
     thresher.events.Lose({
         fromBlock: b,
