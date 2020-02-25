@@ -23,6 +23,12 @@ module.exports = {
       network_id: "*",
     },
 
+    ganache: {
+        host: "localhost",
+        port: 7545,
+        network_id: "5777"
+    },
+
     // Rinkeby testnet:
     rinkeby: {
       provider: () => new HDWalletProvider(process.env.WALLET_SEED, `https://rinkeby.infura.io/v3/${process.env.INFURA_PROJECT_ID}`),
