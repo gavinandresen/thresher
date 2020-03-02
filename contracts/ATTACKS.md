@@ -10,12 +10,13 @@ See "On Bitcoin as a public randomess source" by Bonneau, Clark, and
 Goldfeder for an analysis of the costs to miners:
     https://pdfs.semanticscholar.org/ebae/9c7d91ea8b6a987642040a2142cc5ea67f7d.pdf
 
-Cheating only pays if miners can win more than twice what they earn
-mining a block; the reward is currently 2 ETH (plus fees), so we're OK 
-using the block hash as our randomness source as long a cheating miner
-can't win more than 4 ETH. The contract constructor doesn't allow
-payouts of more than 4 ETH, and the plan is to deploy this contract
-with a maximum payout of 1 ETH.
+... but that paper doesn't account for 'uncle' blocks. A miner can decline to
+announce a losing block at height N, wait for another block at height N,
+THEN announce the losing block and expect to get the 'uncle' block reward
+(7/8 of the normal block reward).
+
+So the block reward given up is 1/8 * 2 == 0.25 ETH, which gives us the maximum
+win amount.
 
 (This should get better with the beacon chain of eth2 and the use of a
 verifiable delay function (VDF) and proof-of-stake.)

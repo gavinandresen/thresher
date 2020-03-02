@@ -86,7 +86,7 @@ contract Thresher is EntryDeque, ReentrancyGuard {
     constructor(uint256 _maxPayout) public {
         maxPayout = _maxPayout;
         require(maxPayout > 0);
-        require(maxPayout < 4 ether); // more than twice block reward is insecure
+        require(maxPayout <= 0.25 ether); // more 1/8 block reward is insecure
 
         // initial value of randomHash is arbitrary (Gavin likes 11)
         randomHash = keccak256(abi.encode("Eleven!"));

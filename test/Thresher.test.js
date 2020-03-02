@@ -15,8 +15,8 @@ contract('Thresher', accounts => {
     let snapshotId
 
     let zeroETH = web3.utils.toBN(web3.utils.toWei('0', 'ether'))
-    let halfETH = web3.utils.toBN(web3.utils.toWei('0.5', 'ether'))
-    let oneETH = web3.utils.toBN(web3.utils.toWei('1', 'ether'))
+    let eighthETH = web3.utils.toBN(web3.utils.toWei('0.125', 'ether'))
+    let quarterETH = web3.utils.toBN(web3.utils.toWei('0.25', 'ether'))
     let tenETH = web3.utils.toBN(web3.utils.toWei('10', 'ether'))
 
     before(async () => {
@@ -28,23 +28,23 @@ contract('Thresher', accounts => {
 
     describe('#contribute', () => {
         it('should handle 0-value deposits', async () => {
-            await thresher.increaseBalance({value: oneETH}).should.be.fulfilled
+            await thresher.increaseBalance({value: quarterETH}).should.be.fulfilled
             // win one ETH, depositing zero ETH (always lose):
-            let r = await thresher.contribute(oneETH, {value: zeroETH, from: sender}).should.be.fulfilled
+            let r = await thresher.contribute(quarterETH, {value: zeroETH, from: sender}).should.be.fulfilled
         })
         it('should handle max-value deposits', async () => {
-            let r = await thresher.contribute(oneETH, {value: oneETH, from: sender}).should.be.fulfilled
+            let r = await thresher.contribute(quarterETH, {value: quarterETH, from: sender}).should.be.fulfilled
         })
         it('should throw if contract balance is too low to pay out', async () => {
-            let v = halfETH.add(web3.utils.toBN('1'))
-            let error = await thresher.contribute(v, {value: halfETH, from: sender}).should.be.rejected
+            let v = eighthETH.add(web3.utils.toBN('1'))
+            let error = await thresher.contribute(v, {value: eighthETH, from: sender}).should.be.rejected
             error.reason.should.be.equal('Balance too low')
             error = await thresher.contribute(v, {value: zeroETH, from: sender}).should.be.rejected
             error.reason.should.be.equal('Balance too low')
         })
         it('should throw if deposit too large', async () => {
-            let v = halfETH.add(web3.utils.toBN('1'));
-            const error = await thresher.contribute(halfETH, {value: v, from: sender}).should.be.rejected;
+            let v = eighthETH.add(web3.utils.toBN('1'));
+            const error = await thresher.contribute(eighthETH, {value: v, from: sender}).should.be.rejected;
             error.reason.should.be.equal('Amount too large');
         })
         it('should throw if win amount zero', async () => {
@@ -52,7 +52,7 @@ contract('Thresher', accounts => {
             error.reason.should.be.equal('Win amount must be greater than zero');
         })
         it('should throw if win amount too large', async () => {
-            const error = await thresher.contribute(tenETH, {value: oneETH, from: sender}).should.be.rejected;
+            const error = await thresher.contribute(tenETH, {value: quarterETH, from: sender}).should.be.rejected;
             error.reason.should.be.equal('Win amount too large');
         })
         it('should win/lose at random', async () => {
@@ -61,7 +61,7 @@ contract('Thresher', accounts => {
             // Pre-fund with 10 eth so wins never wait to payout:
             await thresher.increaseBalance({value: tenETH}).should.be.fulfilled
             for (var i = 0; i < 32; i++) { // 32 deposits...
-                let r = await thresher.contribute(oneETH, {value: halfETH, from: sender}).should.be.fulfilled;
+                let r = await thresher.contribute(quarterETH, {value: eighthETH, from: sender}).should.be.fulfilled;
                 for (var n = 0; n < r.logs.length; n++) {
                     if (r.logs[n].event == 'Win') {
                         winCount += 1;
@@ -97,8 +97,8 @@ contract('Thresher', accounts => {
             let winCount = 0;
             let loseCount = 0;
 
-            thresher.contribute(oneETH, {value: oneETH, from: sender}).should.be.fulfilled;
-            await thresher.contribute(oneETH, {value: oneETH, from: sender}).should.be.fulfilled;
+            thresher.contribute(quarterETH, {value: quarterETH, from: sender}).should.be.fulfilled;
+            await thresher.contribute(quarterETH, {value: quarterETH, from: sender}).should.be.fulfilled;
 
             // Mine 256 blocks...
             for (var i = 0; i < 256; i++) {
@@ -127,8 +127,8 @@ contract('Thresher', accounts => {
                 let sID = await takeSnapshot();
                 nTries += 1;
                 // Two entries...
-                thresher.contribute(halfETH, {value: halfETH, from: sender}).should.be.fulfilled;
-                await thresher.contribute(halfETH, {value: halfETH, from: sender}).should.be.fulfilled;
+                thresher.contribute(eighthETH, {value: eighthETH, from: sender}).should.be.fulfilled;
+                await thresher.contribute(eighthETH, {value: eighthETH, from: sender}).should.be.fulfilled;
                 // ... ready to be processed:
                 await mineBlock();
                 await mineBlock();
@@ -150,9 +150,9 @@ contract('Thresher', accounts => {
             await thresher.increaseBalance({value: tenETH}).should.be.fulfilled
 
             // sure-winner: should generate a TransferError
-            gasGuzzler.contribute(thresher.address, halfETH, {value: halfETH, from: sender}).should.be.fulfilled;
+            gasGuzzler.contribute(thresher.address, eighthETH, {value: eighthETH, from: sender}).should.be.fulfilled;
             // sure-loser: should generate a Lose
-            await gasGuzzler.contribute(thresher.address, halfETH, {value: zeroETH, from: sender}).should.be.fulfilled;
+            await gasGuzzler.contribute(thresher.address, eighthETH, {value: zeroETH, from: sender}).should.be.fulfilled;
 
             await mineBlock();
             await mineBlock();
